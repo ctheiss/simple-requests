@@ -1,4 +1,4 @@
 simple-requests
 ===============
 
-Get async requests in Python with thinking about about it.
+Asynchronous requests in Python without thinking about it.
