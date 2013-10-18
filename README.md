@@ -33,6 +33,14 @@ for profile_response in requests.swarm(profile_urls):
         friends_response.html
 ```
 
+## Installation
+
+Installation is easy with pip:
+
+```
+$ pip install simple-requests
+```
+
 ## Goal
 
 The goal of this library is to allow you to get the performance benefit of asynchronous requests, without needing to use any asynchronous coding paradigms.  It is built on [gevent](https://github.com/surfly/gevent) and [requests](https://github.com/kennethreitz/requests).

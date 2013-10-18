@@ -49,8 +49,9 @@ setup(
         'gevent',
         'requests'
     ],
-    py_modules=['simple-requests'],
+    py_modules=['simple_requests'],
     zip_safe=False,
+    include_package_data=True,
     platforms='any',
     classifiers=[
         'Environment :: Web Environment',
