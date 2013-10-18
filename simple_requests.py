@@ -34,12 +34,14 @@ Usage
 # This needs to be first
 import gevent.monkey; gevent.monkey.patch_all(thread=False, select=False)
 
+from atexit import register
 from bisect import bisect_right
 from collections import OrderedDict
 from time import time
 from urllib2 import HTTPError as libHTTPError
+from weakref import WeakSet
 
-from gevent import sleep, spawn
+from gevent import GreenletExit, killall, sleep, spawn
 from gevent.event import Event
 from gevent.pool import Pool
 
@@ -58,8 +60,6 @@ class HTTPError(libHTTPError):
     def __init__(self, response):
         super(HTTPError, self).__init__(response.url, response.status_code, response.reason, response.headers, response.raw)
         self.response = response
-
-# TODO: Catch GreenletExit in Requests._run to obviate the need for ResponseIterator.finish (see http://greenlet.readthedocs.org/en/latest/#garbage-collecting-live-greenlets)
 
 class ResponseIterator(object):
     """Default implementation of the iterator returned by ``Requests.swarm``.
@@ -249,6 +249,10 @@ class _RetryQueue(object):
         return self.maxStatus[:5]
 
 
+_inFlight = WeakSet()
+register(killall, _inFlight)
+
+
 class Requests(object):
     """A session of requests.
 
@@ -297,7 +301,7 @@ class Requests(object):
         self._requestQueue = _RequestQueue()
         self._retryQueue = _RetryQueue()
 
-        spawn(self._run).link(self._exit)
+        _inFlight.add(spawn(self._run))
 
     def _run(self):
         done = False
@@ -307,16 +311,12 @@ class Requests(object):
                 reqGroup = self._requestQueue.getLatestGroup()
                 retryGroup = self._retryQueue.getLatestGroup()
 
-                print ('Req group: %s, retry group: %s' % ( reqGroup, retryGroup ))
-
                 if reqGroup is None and retryGroup is None:
                     if done:
                         break
                     else:
-                        print 'Start master wait: ' + str(time())
                         self._requestAdded.clear()
                         self._requestAdded.wait(self._retryQueue.getMinWaitTime())
-                        print 'End master wait: ' + str(time())
                         continue
 
                 elif retryGroup is None or (reqGroup is not None and reqGroup > retryGroup):
@@ -334,17 +334,11 @@ class Requests(object):
                 else:
                     request, responseIterator, group, requestIndex, numTries = self._retryQueue.pop()
 
-                self.pool.spawn(self._execute, request, responseIterator, group, requestIndex, numTries).link(self._response)
-                print 'Start master sleep: ' + str(time())
+                self.pool.spawn(self._execute, request, responseIterator, group, requestIndex, numTries).rawlink(self._response)
                 sleep(self.minSecondsBetweenRequests)
-                print 'End master sleep: ' + str(time())
 
             except GreenletExit:
-                print 'Moop!!!!'
                 done = True
-
-    def _exit(self, *args):
-        print '!!!!!!!!!!!!'
 
     def _execute(self, request, responseIterator, group, requestIndex, numTries):
         try:
