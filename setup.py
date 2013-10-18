@@ -8,14 +8,18 @@ Usage
 
     from simple_requests import Requests
 
-    # Creates a session and thread pool; both can be customized (see API docs for advanced usage).
+    # Creates a session and thread pool
     requests = Requests()
 
-    # Sends one simple request.  The response is returned synchronously.
+    # Sends one simple request; the response is returned synchronously.
     login_response = requests.one('http://cat-videos.net/login?user=fanatic&password=c4tl0v3r')
 
-    # Cookies are maintained in this instance of Requests, so subsequent requests will still be logged-in.
-    profile_urls = [ 'http://cat-videos.net/profile/mookie', 'http://cat-videos.net/profile/kenneth', 'http://cat-videos.net/profile/itchy' ]
+    # Cookies are maintained in this instance of Requests, so subsequent requests
+    # will still be logged-in.
+    profile_urls = [
+        'http://cat-videos.net/profile/mookie',
+        'http://cat-videos.net/profile/kenneth',
+        'http://cat-videos.net/profile/itchy' ]
 
     # Asynchronously send all the requests for profile pages
     for profile_response in requests.swarm(profile_urls):
@@ -25,7 +29,8 @@ Usage
         # Order doesn't matter this time either, so turn that off for a performance gain
         for friends_response in requests.swarm(profile_response.links, maintainOrder = False):
 
-            # Do something intelligent with the responses, like using regex to parse the HTML (see http://stackoverflow.com/a/1732454)
+            # Do something intelligent with the responses, like using
+            # regex to parse the HTML (see http://stackoverflow.com/a/1732454)
             friends_response.html
 """
 
