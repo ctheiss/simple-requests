@@ -6,7 +6,7 @@ requests, without needing to use any asynchronous coding paradigms.
 Usage
 -----
 
-    from simple-requests import Requests
+    from simple_requests import Requests
 
     # Creates a session and thread pool; both can be customized (see API docs for advanced usage).
     requests = Requests()
@@ -33,7 +33,7 @@ from setuptools import setup
 
 setup(
     name='simple-requests',
-    version='0.1.2',
+    version='1.0.0',
     url='https://github.com/ctheiss/simple-requests',
     license='MIT',
     author='Corey Theiss',

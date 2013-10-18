@@ -8,7 +8,7 @@ Please see the inline documentation for advanced usage.
 Usage
 -----
 
-    from simple-requests import Requests
+    from simple_requests import Requests
 
     # Creates a session and thread pool
     requests = Requests()
@@ -47,7 +47,8 @@ from gevent.pool import Pool
 
 from requests import PreparedRequest, Request, Response, Session
 
-__all__ = ( 'Requests', 'HTTPError', 'Strict', 'Lenient', 'Backoff', 'ResponseIterator' )
+__all__ = ( 'Requests', 'ResponsePreprocessor', 'Strict', 'Lenient', 'Backoff', 'HTTPError' )
+
 
 class HTTPError(libHTTPError):
     """Encapsulates server errors (status codes in the 400s and 500s).
@@ -61,11 +62,12 @@ class HTTPError(libHTTPError):
         super(HTTPError, self).__init__(response.url, response.status_code, response.reason, response.headers, response.raw)
         self.response = response
 
-class ResponseIterator(object):
-    """Default implementation of the iterator returned by ``Requests.swarm``.
 
-    The only two methods that should be overriden by subtypes is ``success``
-    and ``error``.  Whatever is returned by these functions is what gets
+class ResponsePreprocessor(object):
+    """Default implementation of how responses are preprocessed.
+
+    By default, successful responses are returned and errors are raised.
+    Whatever is returned by ``success`` and ``error`` is what gets
     returned by ``Responses.one`` and the iterator of ``Responses.swarm``.
 
     There are several reasons you may want to override the default
@@ -76,53 +78,11 @@ class ResponseIterator(object):
        specific way
      * More...
     """
-
-    def __init__(self, maintainOrder):
-        self._currentIndex = 0 if maintainOrder else None
-        self._responseAdded = Event()
-        self._responses = OrderedDict()
-        self._inflight = 0
-        self._done = False
-
-    def __iter__(self):
-        return self
-
-    def _add(self, response, exception, requestIndex):
-        if self._responses is not None:
-            self._responses[requestIndex] = ( response, exception )
-        self._inflight -= 1
-        self._responseAdded.set()
-
     def success(self, response):
         return response
 
     def error(self, exception):
         raise exception
-
-    def next(self):
-        while True:
-            if self._inflight == 0 and self._done and (self._responses is None or len(self._responses) == 0):
-                raise StopIteration
-
-            found = False
-            if self._responses is not None and len(self._responses) > 0:
-                if self._currentIndex is None:
-                    found = True
-                    response, exception = self._responses.popitem(last = False)[1]
-                else:
-                    if self._currentIndex in self._responses:
-                        found = True
-                        response, exception = self._responses.pop(self._currentIndex)
-                        self._currentIndex += 1
-
-            if found:
-                if exception is None:
-                    return self.success(response)
-                else:
-                    return self.error(exception)
-            else:
-                self._responseAdded.clear()
-                self._responseAdded.wait()
 
 
 class RetryStrategy(object):
@@ -181,6 +141,50 @@ class Backoff(RetryStrategy):
                 return -1
 
 
+class _ResponseIterator(object):
+    def __init__(self, maintainOrder, preprocessor):
+        self._currentIndex = 0 if maintainOrder else None
+        self._preprocessor = preprocessor
+        self._responseAdded = Event()
+        self._responses = OrderedDict()
+        self._inflight = 0
+        self._done = False
+
+    def __iter__(self):
+        return self
+
+    def _add(self, response, exception, requestIndex):
+        if self._responses is not None:
+            self._responses[requestIndex] = ( response, exception )
+        self._inflight -= 1
+        self._responseAdded.set()
+
+    def next(self):
+        while True:
+            if self._inflight == 0 and self._done and (self._responses is None or len(self._responses) == 0):
+                raise StopIteration
+
+            found = False
+            if self._responses is not None and len(self._responses) > 0:
+                if self._currentIndex is None:
+                    found = True
+                    response, exception = self._responses.popitem(last = False)[1]
+                else:
+                    if self._currentIndex in self._responses:
+                        found = True
+                        response, exception = self._responses.pop(self._currentIndex)
+                        self._currentIndex += 1
+
+            if found:
+                if exception is None:
+                    return self._preprocessor.success(response)
+                else:
+                    return self._preprocessor.error(exception)
+            else:
+                self._responseAdded.clear()
+                self._responseAdded.wait()
+
+
 class _RequestQueue(object):
     def __init__(self):
         self.queue = [] # requestIterator, nextRequest, responseIterator, group, requestIndex
@@ -209,9 +213,16 @@ class _RequestQueue(object):
             status[1] = status[0].next()
             status[4] += 1
         except StopIteration:
-            self.queue.pop()
+            self.queue.pop(0)
             status[2]._done = True
         return ret
+
+    def stop(self):
+        while len(self.queue):
+            responseIterator = self.queue.pop(0)[2]
+            responseIterator._done = True
+            if responseIterator._inflight == 0:
+                responseIterator._responseAdded.set()
 
 
 class _RetryQueue(object):
@@ -248,6 +259,14 @@ class _RetryQueue(object):
         del self.sortedqueue[self.maxIndex]
         return self.maxStatus[:5]
 
+    def stop(self):
+        while len(self.sortedqueue):
+            responseIterator = self.sortedqueue.pop(0)[1]
+            responseIterator._inflight -= 1
+            if responseIterator._inflight == 0:
+                responseIterator._responseAdded.set()
+        self.timelist = []
+
 
 _inFlight = WeakSet()
 register(killall, _inFlight)
@@ -273,28 +292,28 @@ class Requests(object):
                           included: ``Lenient`` (good for really small servers,
                           perhaps hosted out of somebody's home), and
                           ``Backoff`` (good for APIs).
-    :param responseIterator: A subtype of ``ResponseIterator``.  Useful if you
-                             need to override the default handling of
-                             successful responses and/or failed responses.
-
+    :param responsePreprocessor: An instance of ``ResponsePreprocessor`` (or
+                                 subclass).  Useful if you need to override the
+                                 default handling of successful responses
+                                 and/or failed responses.
     :attr session: An instance of ``requests.Session`` that manages things like
                    maintaining cookies between requests.
     :attr pool: An instance of ``gevent.Pool`` that manages things like
                 maintaining the number of concurrent requests.  Changes to this
                 object should be done before any requests are sent.
     """
-    def __init__(self, concurrent = 2, minSecondsBetweenRequests = 0.15, retryStrategy = Strict(), responseIterator = ResponseIterator):
+    def __init__(self, concurrent = 2, minSecondsBetweenRequests = 0.15, retryStrategy = Strict(), responsePreprocessor = ResponsePreprocessor()):
         if not isinstance(retryStrategy, RetryStrategy):
             raise TypeError('retryStrategy must be an instance of RetryStrategy, not %s' % type(retryStrategy))
 
-        if not issubclass(responseIterator, ResponseIterator):
-            raise TypeError('responseIterator must be a sub type of ResponseIterator, not %s' % responseIterator)
+        if not isinstance(responsePreprocessor, ResponsePreprocessor):
+            raise TypeError('responsePreprocessor must be an instance of ResponsePreprocessor, not %s' % type(responsePreprocessor))
 
         self.session = Session()
         self.pool = Pool(concurrent)
         self.minSecondsBetweenRequests = minSecondsBetweenRequests
-        self.responseIterator = responseIterator
         self.retryStrategy = retryStrategy
+        self.responsePreprocessor = responsePreprocessor
 
         self._requestGroups = 0
         self._requestAdded = Event()
@@ -308,6 +327,7 @@ class Requests(object):
 
         while True:
             try:
+                self.pool.wait_available()
                 reqGroup = self._requestQueue.getLatestGroup()
                 retryGroup = self._retryQueue.getLatestGroup()
 
@@ -335,7 +355,8 @@ class Requests(object):
                     request, responseIterator, group, requestIndex, numTries = self._retryQueue.pop()
 
                 self.pool.spawn(self._execute, request, responseIterator, group, requestIndex, numTries).rawlink(self._response)
-                sleep(self.minSecondsBetweenRequests)
+                if self.minSecondsBetweenRequests > 0:
+                    sleep(self.minSecondsBetweenRequests)
 
             except GreenletExit:
                 done = True
@@ -348,30 +369,46 @@ class Requests(object):
                 return request, response, responseIterator, group, requestIndex, numTries, HTTPError(response)
             else:
                 return request, response, responseIterator, group, requestIndex, numTries, None
-        except Exception as ex:
+        except (Exception, GreenletExit) as ex:
             return request, None, responseIterator, group, requestIndex, numTries, ex
     
     def _response(self, status):
-        request, response, responseIterator, group, requestIndex, numTries, exception = status if isinstance(status, tuple) else status.value
+        if isinstance(status, tuple):
+            request, response, responseIterator, group, requestIndex, numTries, exception = status
+            stopped = False
+        else:
+            request, response, responseIterator, group, requestIndex, numTries, exception = status.value
+            stopped = hasattr(status, 'stopped')
         numTries += 1
 
         if exception is None:
             responseIterator._add(response, None, requestIndex)
+        elif isinstance(exception, GreenletExit):
+            # Execution was killed
+            responseIterator._inflight -= 1
+            if responseIterator._inflight == 0:
+                responseIterator._responseAdded.set()
         else:
-            wait = self.retryStrategy.retry(request, exception, numTries)
-            if wait >= 0:
-                self._retryQueue.add(request, responseIterator, group, requestIndex, numTries, wait)
-                self._requestAdded.set()
-            else:
+            if stopped:
+                # A stop was sent, so don't add to the retry queue regardless of strategy
                 responseIterator._add(response, exception, requestIndex)
+            else:
+                wait = self.retryStrategy.retry(request, exception, numTries)
+                if wait >= 0:
+                    self._retryQueue.add(request, responseIterator, group, requestIndex, numTries, wait)
+                    self._requestAdded.set()
+                else:
+                    responseIterator._add(response, exception, requestIndex)
 
-    def _add(self, requestIterator, maintainOrder):
-        responseIterator = self.responseIterator(maintainOrder)
+    def _add(self, requestIterator, maintainOrder, responsePreprocessor):
+        if responsePreprocessor is not None and not isinstance(responsePreprocessor, ResponsePreprocessor):
+            raise TypeError('responsePreprocessor must be an instance of ResponsePreprocessor, not %s' % type(responsePreprocessor))
+        responseIterator = _ResponseIterator(maintainOrder, responsePreprocessor or self.responsePreprocessor)
         self._requestQueue.add(requestIterator, responseIterator)
         self._requestAdded.set()
         return responseIterator
 
-    def one(self, request):
+    def one(self, request, responsePreprocessor = None):
         """Execute one request synchronously.
 
         Since this request is synchronous, it takes precedence over any other
@@ -380,17 +417,24 @@ class Requests(object):
         :param request: A ``str``, ``requests.Request``, or
                         ``requests.PreparedRequest``.  ``str`` (or any other
                         ``basestring``) will be executed as an HTTP GET.
+        :param responsePreprocessor: (optional) Override the default
+                                     preprocessor for this request only.
         :returns: A ``requets.Response``.
         """
-        return self._add([ request ].__iter__(), False).next()
+        return self._add([ request ].__iter__(), False, responsePreprocessor).next()
 
-    def swarm(self, iterable, maintainOrder = True):
+    def swarm(self, iterable, maintainOrder = True, responsePreprocessor = None):
         """Execute each request asynchronously.
 
         Subsequent calls to ``swarm`` or ``one`` on the same ``Requests``
         instance will be prioritized *over* earlier calls.  This is generally
         aligned with how responses are processed (one response is inspected,
         which leads to more requests whose responses are inspected... etc.)
+
+        This method will try hard to finish executing all requests, even if the
+        iterator has fallen out of scope, or an exception was raised, or even
+        if the execution of the main module is finished.  Use the ``stop``
+        method to cancel any pending requests and/or kill executing requests. 
 
         :param iterable: A generator, list, tuple, dictionary, or any other
                          iterable object containing any combination of ``str``,
@@ -401,7 +445,35 @@ class Requests(object):
                               guaranteed to be in the same order as the
                               requests.  If this is not important to you, set
                               this to False for a performance gain.
+        :param responsePreprocessor: (optional) Override the default
+                                     preprocessor for these requests only.
         :returns: A ``ResponseIterator`` that may be iterated over to get a
                   ``requets.Response`` for each request.
         """
-        return self._add(iterable.__iter__(), maintainOrder)
+        return self._add(iterable.__iter__(), maintainOrder, responsePreprocessor)
+
+    def stop(self, killExecuting = True):
+        """Stop the execution of requests early.
+
+        The ``swarm`` method will try hard to finish executing all requests,
+        even if the iterator has fallen out of scope, or an exception was
+        raised, or even if the execution of the main module is finished.
+
+        Use this method to cancel all pending requests.
+
+        :param killExecuting: (optional) In addition to canceling pending
+                              requests, kill any currently-executing requests
+                              so that the response will not be returned. While
+                              this has the benefit of guaranteeing that there
+                              will be no more activity once the method returns,
+                              it means that it is undeterminable whether any
+                              current requests succeeded, failed, or had any
+                              server side-effects.
+        """
+        self._requestQueue.stop()
+        self._retryQueue.stop()
+        if killExecuting:
+            self.pool.kill()
+        else:
+            for greenlet in self.pool.greenlets:
+                setattr(greenlet, 'stopped', True)
