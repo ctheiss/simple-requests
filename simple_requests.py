@@ -3,10 +3,27 @@
 """Simple-requests allows you to get the performance benefit of asynchronous
 requests, without needing to use any asynchronous coding paradigms.
 
-Please see the inline documentation for advanced usage.
+See http://pythonhosted.org/simple-requests for HTML documentation.
+
+Goal
+----
+
+The goal of this library is to allow you to get the performance benefit of asynchronous requests, without needing to use any asynchronous coding paradigms.  It is built on `gevent <https://github.com/surfly/gevent>`_ and `requests <https://github.com/kennethreitz/requests>`_.
+
+If you like getting your hands dirty, the :class:`gevent.Pool` and :class:`requests.Session` that drives the main object is readily available for you to tinker with as much as you'd like.
+
+Features
+--------
+
+There is also some added functionality not available out-of-the-box from the base libraries:
+
+* Request thresholding
+* Automatic retry on failure, with three different retry strategies included that focus on different applications (big server scrape, small server scrape, API)
+* Lazy loading and minimal object caching to keep the memory footprint down
 
 Usage
 -----
+.. code-block:: python
 
     from simple_requests import Requests
 
@@ -16,8 +33,12 @@ Usage
     # Sends one simple request; the response is returned synchronously.
     login_response = requests.one('http://cat-videos.net/login?user=fanatic&password=c4tl0v3r')
 
-    # Cookies are maintained in this instance of Requests, so subsequent requests will still be logged-in.
-    profile_urls = [ 'http://cat-videos.net/profile/mookie', 'http://cat-videos.net/profile/kenneth', 'http://cat-videos.net/profile/itchy' ]
+    # Cookies are maintained in this instance of Requests, so subsequent requests
+    # will still be logged-in.
+    profile_urls = [
+        'http://cat-videos.net/profile/mookie',
+        'http://cat-videos.net/profile/kenneth',
+        'http://cat-videos.net/profile/itchy' ]
 
     # Asynchronously send all the requests for profile pages
     for profile_response in requests.swarm(profile_urls):
@@ -27,8 +48,12 @@ Usage
         # Order doesn't matter this time either, so turn that off for a performance gain
         for friends_response in requests.swarm(profile_response.links, maintainOrder = False):
 
-            # Do something intelligent with the responses, like using regex to parse the HTML (see http://stackoverflow.com/a/1732454)
+            # Do something intelligent with the responses, like using
+            # regex to parse the HTML (see http://stackoverflow.com/a/1732454)
             friends_response.html
+
+API
+---
 """
 
 # This needs to be first
@@ -53,10 +78,17 @@ __all__ = ( 'Requests', 'ResponsePreprocessor', 'Strict', 'Lenient', 'Backoff', 
 class HTTPError(libHTTPError):
     """Encapsulates server errors (status codes in the 400s and 500s).
 
-    :attr code: Status code for this error.
-    :attr msg: The reason (associated with the status code).
-    :attr response: The instance of ``requests.Response`` which triggered the
-                    error.
+    .. attribute:: code
+
+        Status code for this error.
+
+    .. attribute:: msg
+
+        The reason (associated with the status code).
+
+    .. attribute:: response
+
+        The instance of :class:`requests.Response` which triggered the error.
     """
     def __init__(self, response):
         super(HTTPError, self).__init__(response.url, response.status_code, response.reason, response.headers, response.raw)
@@ -67,16 +99,17 @@ class ResponsePreprocessor(object):
     """Default implementation of how responses are preprocessed.
 
     By default, successful responses are returned and errors are raised.
-    Whatever is returned by ``success`` and ``error`` is what gets
-    returned by ``Responses.one`` and the iterator of ``Responses.swarm``.
+    Whatever is returned by :meth:`success` and :meth:`error` is what gets
+    returned by :meth:`Responses.one` and the iterator of :meth:`Responses.swarm`.
 
     There are several reasons you may want to override the default
     implementation:
-     * Don't raise an exception on server errors
-     * Add a side-effect, such as writing all responses to an archive file
-     * Responses in your application must always be pre-processed in a
-       specific way
-     * More...
+
+    * Don't raise an exception on server errors
+    * Add a side-effect, such as writing all responses to an archive file
+    * Responses in your application must always be pre-processed in a
+      specific way
+    * More...
     """
     def success(self, response):
         return response
@@ -91,7 +124,7 @@ class RetryStrategy(object):
         return -1
 
 class Strict(RetryStrategy):
-    """A good default ``RetryStrategy``.
+    """A good default :class:`RetryStrategy`.
 
     Retries up to two times, with 2 seconds between each attempt.
 
@@ -104,7 +137,7 @@ class Strict(RetryStrategy):
             return -1
 
 class Lenient(RetryStrategy):
-    """A ``RetryStrategy`` designed for very small servers.
+    """A :class:`RetryStrategy` designed for very small servers.
 
     Small servers are expected to go down every now and then, so this
     strategy retries requests up to 4 times, with a full minute between each
@@ -119,7 +152,7 @@ class Lenient(RetryStrategy):
             return -1
 
 class Backoff(RetryStrategy):
-    """A ``RetryStrategy`` designed for APIs.
+    """A :class:`RetryStrategy` designed for APIs.
 
     Since APIs are *expected* to work, this implementation retries many times,
     with an exponentially-increasing time in between each request (capped at
@@ -278,29 +311,36 @@ class Requests(object):
     Creates a session and a thread pool. The intention is to have one instance
     per server that you're hitting at the same time.
 
-    :param concurrent: The maximum number of concurrent requests allowed for
-                       this instance (defaults to 2).
-    :param minSecondsBetweenRequests: Every request is guaranteed to be
-                                      separated by at least this many seconds
-                                      (defaults to 0.15)
-    :param retryStrategy: An instance of ``RetryStrategy`` (or subclass).
-                          Allows you to define if and how a request should
-                          be retried on failure. The default implementation
-                          (`Strict`) retries failed requests twice, for server
-                          errors only, with at least 2 seconds between each
-                          subsequent request. Two other implementations are
-                          included: ``Lenient`` (good for really small servers,
-                          perhaps hosted out of somebody's home), and
-                          ``Backoff`` (good for APIs).
-    :param responsePreprocessor: An instance of ``ResponsePreprocessor`` (or
-                                 subclass).  Useful if you need to override the
-                                 default handling of successful responses
-                                 and/or failed responses.
-    :attr session: An instance of ``requests.Session`` that manages things like
-                   maintaining cookies between requests.
-    :attr pool: An instance of ``gevent.Pool`` that manages things like
-                maintaining the number of concurrent requests.  Changes to this
-                object should be done before any requests are sent.
+    :param concurrent: (optional) The maximum number of concurrent requests
+                       allowed for this instance.
+    :param minSecondsBetweenRequests: (optional) Every request is guaranteed to
+                                      be separated by at least this many
+                                      seconds.
+    :param retryStrategy: (optional) An instance of :class:`RetryStrategy` (or
+                          subclass). Allows you to define if and how a request
+                          should be retried on failure. The default
+                          implementation (:class:`Strict`) retries failed
+                          requests twice, for server errors only, with at least
+                          2 seconds between each subsequent request. Two other
+                          implementations are included: :class:`Lenient` (good
+                          for really small servers, perhaps hosted out of
+                          somebody's home), and :class:`Backoff` (good for
+                          APIs).
+    :param responsePreprocessor: (optional) An instance of
+                                 :class:`ResponsePreprocessor` (or subclass).
+                                 Useful if you need to override the default
+                                 handling of successful responses and/or failed
+                                 responses.
+    .. attribute:: session
+
+        An instance of :class:`requests.Session` that manages things like
+        maintaining cookies between requests.
+
+    .. attribute:: pool
+
+        An instance of :class:`gevent.Pool` that manages things like
+        maintaining the number of concurrent requests.  Changes to this object
+        should be done before any requests are sent.
     """
     def __init__(self, concurrent = 2, minSecondsBetweenRequests = 0.15, retryStrategy = Strict(), responsePreprocessor = ResponsePreprocessor()):
         if not isinstance(retryStrategy, RetryStrategy):
@@ -412,50 +452,53 @@ class Requests(object):
         """Execute one request synchronously.
 
         Since this request is synchronous, it takes precedence over any other
-        ``swarm`` calls which may still be processing.
+        :meth:`swarm` calls which may still be processing.
 
-        :param request: A ``str``, ``requests.Request``, or
-                        ``requests.PreparedRequest``.  ``str`` (or any other
-                        ``basestring``) will be executed as an HTTP GET.
+        :param request: A :class:`str`, :class:`requests.Request`, or
+                        :class:`requests.PreparedRequest`.  :class:`str`
+                        (or any other :class:`basestring`) will be executed as
+                        an HTTP ``GET``.
         :param responsePreprocessor: (optional) Override the default
                                      preprocessor for this request only.
-        :returns: A ``requets.Response``.
+        :returns: A :class:`requests.Response`.
         """
         return self._add([ request ].__iter__(), False, responsePreprocessor).next()
 
     def swarm(self, iterable, maintainOrder = True, responsePreprocessor = None):
         """Execute each request asynchronously.
 
-        Subsequent calls to ``swarm`` or ``one`` on the same ``Requests``
-        instance will be prioritized *over* earlier calls.  This is generally
-        aligned with how responses are processed (one response is inspected,
-        which leads to more requests whose responses are inspected... etc.)
+        Subsequent calls to :meth:`swarm` or :meth:`one` on the same
+        :class:`Requests` instance will be prioritized *over* earlier calls.
+        This is generally aligned with how responses are processed (one
+        response is inspected, which leads to more requests whose responses
+        are inspected... etc.)
 
         This method will try hard to finish executing all requests, even if the
         iterator has fallen out of scope, or an exception was raised, or even
-        if the execution of the main module is finished.  Use the ``stop``
+        if the execution of the main module is finished.  Use the :meth:`stop`
         method to cancel any pending requests and/or kill executing requests. 
 
         :param iterable: A generator, list, tuple, dictionary, or any other
-                         iterable object containing any combination of ``str``,
-                         ``requests.Request``, ``requests.PreparedRequest``.
-                         ``str`` (or any other ``basestring``) will be executed
-                         as an HTTP GET.
+                         iterable object containing any combination of
+                         :class:`str`, :class:`requests.Request`,
+                         :class:`requests.PreparedRequest`.  :class:`str`
+                         (or any other :class:`basestring`) will be executed
+                         as an HTTP ``GET``.
         :param maintainOrder: (optional) By default, the returned responses are
                               guaranteed to be in the same order as the
                               requests.  If this is not important to you, set
                               this to False for a performance gain.
         :param responsePreprocessor: (optional) Override the default
                                      preprocessor for these requests only.
-        :returns: A ``ResponseIterator`` that may be iterated over to get a
-                  ``requets.Response`` for each request.
+        :returns: A :class:`ResponseIterator` that may be iterated over to get a
+                  :class:`requests.Response` for each request.
         """
         return self._add(iterable.__iter__(), maintainOrder, responsePreprocessor)
 
     def stop(self, killExecuting = True):
         """Stop the execution of requests early.
 
-        The ``swarm`` method will try hard to finish executing all requests,
+        The :meth:`swarm` method will try hard to finish executing all requests,
         even if the iterator has fallen out of scope, or an exception was
         raised, or even if the execution of the main module is finished.
 
