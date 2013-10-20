@@ -33,6 +33,8 @@ for profile_response in requests.swarm(profile_urls):
         friends_response.html
 ```
 
+Please visit [pythonhosted](http://pythonhosted.org/simple-requests/) for the complete documentation, including API reference.
+
 ## Installation
 
 Installation is easy with pip:
