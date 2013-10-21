@@ -1,5 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+"""Test suite for simple-requests
+
+Please note that many of the tests check that the timing of a certain number
+of synthetic requests fall within a very tight time range (0.04 seconds).
+
+Slow computers, or running the tests in the background may fail these tests.
+"""
 
 from gevent import sleep
 from random import random

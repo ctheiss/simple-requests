@@ -377,29 +377,39 @@ class Requests(object):
                     else:
                         self._requestAdded.clear()
                         self._requestAdded.wait(self._retryQueue.getMinWaitTime())
-                        continue
-
-                elif retryGroup is None or (reqGroup is not None and reqGroup > retryGroup):
-                    request, responseIterator, group, requestIndex = self._requestQueue.pop()
-                    numTries = 0
-                    try:
-                        if isinstance(request, basestring):
-                            request = Request(method = 'GET', url = request)
-                        if isinstance(request, Request):
-                            request = self.session.prepare_request(request)
-                        if not isinstance(request, PreparedRequest):
-                            raise TypeError('Request must be an instance of: str (or unicode), Request, PreparedRequest, not %s.' % type(request))
-                    except Exception as ex:
-                        self._response(( request, None, responseIterator, group, requestIndex, numTries, ex ))
+                
                 else:
-                    request, responseIterator, group, requestIndex, numTries = self._retryQueue.pop()
+                    builtrequest = None
+                    if retryGroup is None or (reqGroup is not None and reqGroup > retryGroup):
+                        request, responseIterator, group, requestIndex = self._requestQueue.pop()
+                        numTries = 0
+                        try:
+                            builtrequest = self._build(request)
+                        except Exception as ex:
+                            self._response(( request, None, responseIterator, group, requestIndex, numTries, ex ))
+                            request = None
+                    else:
+                        builtrequest, responseIterator, group, requestIndex, numTries = self._retryQueue.pop()
 
-                self.pool.spawn(self._execute, request, responseIterator, group, requestIndex, numTries).rawlink(self._response)
-                if self.minSecondsBetweenRequests > 0:
-                    sleep(self.minSecondsBetweenRequests)
+                    if isinstance(builtrequest, PreparedRequest):
+                        self.pool.spawn(self._execute, builtrequest, responseIterator, group, requestIndex, numTries).rawlink(self._response)
+                        if self.minSecondsBetweenRequests > 0:
+                            sleep(self.minSecondsBetweenRequests)
+
+                    elif builtrequest:
+                        self._response(( request, builtrequest, responseIterator, group, requestIndex, numTries, None ))
 
             except GreenletExit:
                 done = True
+
+    def _build(self, request):
+        if isinstance(request, basestring):
+            request = Request(method = 'GET', url = request)
+        if isinstance(request, Request):
+            request = self.session.prepare_request(request)
+        if not isinstance(request, PreparedRequest):
+            raise TypeError('Request must be an instance of: str (or unicode), Request, PreparedRequest, not %s.' % type(request))
+        return request
 
     def _execute(self, request, responseIterator, group, requestIndex, numTries):
         try:
