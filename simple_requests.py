@@ -408,6 +408,7 @@ class Requests(object):
 
                     if self._skip(bundle):
                         responseIterator._add(bundle, requestIndex)
+                        continue
 
                     try:
                         if isinstance(bundle.request, basestring):
