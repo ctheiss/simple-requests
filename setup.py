@@ -38,7 +38,7 @@ from setuptools import setup
 
 setup(
     name='simple-requests',
-    version='1.0.1',
+    version='1.0.2',
     url='https://github.com/ctheiss/simple-requests',
     license='MIT',
     author='Corey Theiss',

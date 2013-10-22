@@ -118,7 +118,7 @@ object should be done before any requests are sent.</p>
 <tt class="descname">one</tt><big>(</big><em>request</em>, <em>responsePreprocessor=None</em><big>)</big><a class="headerlink" href="#simple_requests.Requests.one" title="Permalink to this definition">¶</a></dt>
 <dd><p>Execute one request synchronously.</p>
 <p>Since this request is synchronous, it takes precedence over any other
-<a class="reference internal" href="#simple_requests.Requests.swarm" title="simple_requests.Requests.swarm"><tt class="xref py py-meth docutils literal"><span class="pre">swarm()</span></tt></a> calls which may still be processing.</p>
+<a class="reference internal" href="#simple_requests.Requests.each" title="simple_requests.Requests.each"><tt class="xref py py-meth docutils literal"><span class="pre">each()</span></tt></a> or <a class="reference internal" href="#simple_requests.Requests.swarm" title="simple_requests.Requests.swarm"><tt class="xref py py-meth docutils literal"><span class="pre">swarm()</span></tt></a> calls which may still be processing.</p>
 <table class="docutils field-list" frame="void" rules="none">
 <col class="field-name" />
 <col class="field-body" />
@@ -134,6 +134,83 @@ preprocessor for this request only.</li>
 </td>
 </tr>
 <tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last">A <a class="reference external" href="http://www.python-requests.org/en/latest/api/#requests.Response" title="requests.Response"><tt class="xref py py-class docutils literal"><span class="pre">requests.Response</span></tt></a>.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="simple_requests.Requests.swarm">
+<tt class="descname">swarm</tt><big>(</big><em>iterable</em>, <em>maintainOrder=True</em>, <em>responsePreprocessor=None</em><big>)</big><a class="headerlink" href="#simple_requests.Requests.swarm" title="Permalink to this definition">¶</a></dt>
+<dd><p>Execute each request asynchronously.</p>
+<p>Subsequent calls to <a class="reference internal" href="#simple_requests.Requests.each" title="simple_requests.Requests.each"><tt class="xref py py-meth docutils literal"><span class="pre">each()</span></tt></a>, <a class="reference internal" href="#simple_requests.Requests.swarm" title="simple_requests.Requests.swarm"><tt class="xref py py-meth docutils literal"><span class="pre">swarm()</span></tt></a> or <a class="reference internal" href="#simple_requests.Requests.one" title="simple_requests.Requests.one"><tt class="xref py py-meth docutils literal"><span class="pre">one()</span></tt></a> on the same
+<a class="reference internal" href="#simple_requests.Requests" title="simple_requests.Requests"><tt class="xref py py-class docutils literal"><span class="pre">Requests</span></tt></a> instance will be prioritized <em>over</em> earlier calls.
+This is generally aligned with how responses are processed (one
+response is inspected, which leads to more requests whose responses
+are inspected... etc.)</p>
+<p>This method will try hard to finish executing all requests, even if the
+iterator has fallen out of scope, or an exception was raised, or even
+if the execution of the main module is finished.  Use the <a class="reference internal" href="#simple_requests.Requests.stop" title="simple_requests.Requests.stop"><tt class="xref py py-meth docutils literal"><span class="pre">stop()</span></tt></a>
+method to cancel any pending requests and/or kill executing requests.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>iterable</strong> &#8211; A generator, list, tuple, dictionary, or any other
+iterable object containing any combination of
+<tt class="xref py py-class docutils literal"><span class="pre">str</span></tt>, <a class="reference external" href="http://www.python-requests.org/en/latest/api/#requests.Request" title="requests.Request"><tt class="xref py py-class docutils literal"><span class="pre">requests.Request</span></tt></a>, or
+<a class="reference external" href="http://www.python-requests.org/en/latest/api/#requests.PreparedRequest" title="requests.PreparedRequest"><tt class="xref py py-class docutils literal"><span class="pre">requests.PreparedRequest</span></tt></a>.  <tt class="xref py py-class docutils literal"><span class="pre">str</span></tt>
+(or any other <tt class="xref py py-class docutils literal"><span class="pre">basestring</span></tt>) will be executed
+as an HTTP <tt class="docutils literal"><span class="pre">GET</span></tt>.</li>
+<li><strong>maintainOrder</strong> &#8211; (optional) By default, the returned responses are
+guaranteed to be in the same order as the
+requests.  If this is not important to you, set
+this to <tt class="docutils literal"><span class="pre">False</span></tt> for a performance gain.</li>
+<li><strong>responsePreprocessor</strong> &#8211; (optional) Override the default
+preprocessor for these requests only.</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last">A <tt class="xref py py-class docutils literal"><span class="pre">ResponseIterator</span></tt> that may be iterated over to get a
+<a class="reference external" href="http://www.python-requests.org/en/latest/api/#requests.Response" title="requests.Response"><tt class="xref py py-class docutils literal"><span class="pre">requests.Response</span></tt></a>.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="simple_requests.Requests.each">
+<tt class="descname">each</tt><big>(</big><em>iterable</em>, <em>mapToRequest=(lambda i: i.request)</em>, <em>maintainOrder=True</em>, <em>responsePreprocessor=None</em><big>)</big><a class="headerlink" href="#simple_requests.Requests.each" title="Permalink to this definition">¶</a></dt>
+<dd><p>Execute a request for each object.</p>
+<p>Subsequent calls to <a class="reference internal" href="#simple_requests.Requests.each" title="simple_requests.Requests.each"><tt class="xref py py-meth docutils literal"><span class="pre">each()</span></tt></a>, <a class="reference internal" href="#simple_requests.Requests.swarm" title="simple_requests.Requests.swarm"><tt class="xref py py-meth docutils literal"><span class="pre">swarm()</span></tt></a> or <a class="reference internal" href="#simple_requests.Requests.one" title="simple_requests.Requests.one"><tt class="xref py py-meth docutils literal"><span class="pre">one()</span></tt></a> on the same
+<a class="reference internal" href="#simple_requests.Requests" title="simple_requests.Requests"><tt class="xref py py-class docutils literal"><span class="pre">Requests</span></tt></a> instance will be prioritized <em>over</em> earlier calls.
+This is generally aligned with how responses are processed (one
+response is inspected, which leads to more requests whose responses
+are inspected... etc.)</p>
+<p>This method will try hard to finish executing all requests, even if the
+iterator has fallen out of scope, or an exception was raised, or even
+if the execution of the main module is finished.  Use the <a class="reference internal" href="#simple_requests.Requests.stop" title="simple_requests.Requests.stop"><tt class="xref py py-meth docutils literal"><span class="pre">stop()</span></tt></a>
+method to cancel any pending requests and/or kill executing requests.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>iterable</strong> &#8211; A generator, list, tuple, dictionary, or any other
+iterable.</li>
+<li><strong>mapToRequest</strong> &#8211; (optional) By default, the <tt class="xref py py-attr docutils literal"><span class="pre">request</span></tt> attribute (or property) is used.  If such an attribute does not exist (or some other behaviour is desired), this function will be used to get a request for each object in the iterable.  The returned response must be a <tt class="xref py py-class docutils literal"><span class="pre">str</span></tt>, <a class="reference external" href="http://www.python-requests.org/en/latest/api/#requests.Request" title="requests.Request"><tt class="xref py py-class docutils literal"><span class="pre">requests.Request</span></tt></a>, or
+<a class="reference external" href="http://www.python-requests.org/en/latest/api/#requests.PreparedRequest" title="requests.PreparedRequest"><tt class="xref py py-class docutils literal"><span class="pre">requests.PreparedRequest</span></tt></a>.</li>
+<li><strong>maintainOrder</strong> &#8211; (optional) By default, the order is <em>not</em> maintained between the iterable and the responses.  Set this to <tt class="docutils literal"><span class="pre">True</span></tt> to guarantee that the order is maintained.</li>
+<li><strong>responsePreprocessor</strong> &#8211; (optional) Override the default
+preprocessor for these requests only.</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last">A <tt class="xref py py-class docutils literal"><span class="pre">ResponseIterator</span></tt> that may be iterated over to get a
+(<a class="reference external" href="http://www.python-requests.org/en/latest/api/#requests.Response" title="requests.Response"><tt class="xref py py-class docutils literal"><span class="pre">requests.Response</span></tt></a>, object) tuple for each object in the given iterable.</p>
 </td>
 </tr>
 </tbody>
@@ -165,45 +242,41 @@ server side-effects.</td>
 </table>
 </dd></dl>
 
-<dl class="method">
-<dt id="simple_requests.Requests.swarm">
-<tt class="descname">swarm</tt><big>(</big><em>iterable</em>, <em>maintainOrder=True</em>, <em>responsePreprocessor=None</em><big>)</big><a class="headerlink" href="#simple_requests.Requests.swarm" title="Permalink to this definition">¶</a></dt>
-<dd><p>Execute each request asynchronously.</p>
-<p>Subsequent calls to <a class="reference internal" href="#simple_requests.Requests.swarm" title="simple_requests.Requests.swarm"><tt class="xref py py-meth docutils literal"><span class="pre">swarm()</span></tt></a> or <a class="reference internal" href="#simple_requests.Requests.one" title="simple_requests.Requests.one"><tt class="xref py py-meth docutils literal"><span class="pre">one()</span></tt></a> on the same
-<a class="reference internal" href="#simple_requests.Requests" title="simple_requests.Requests"><tt class="xref py py-class docutils literal"><span class="pre">Requests</span></tt></a> instance will be prioritized <em>over</em> earlier calls.
-This is generally aligned with how responses are processed (one
-response is inspected, which leads to more requests whose responses
-are inspected... etc.)</p>
-<p>This method will try hard to finish executing all requests, even if the
-iterator has fallen out of scope, or an exception was raised, or even
-if the execution of the main module is finished.  Use the <a class="reference internal" href="#simple_requests.Requests.stop" title="simple_requests.Requests.stop"><tt class="xref py py-meth docutils literal"><span class="pre">stop()</span></tt></a>
-method to cancel any pending requests and/or kill executing requests.</p>
-<table class="docutils field-list" frame="void" rules="none">
-<col class="field-name" />
-<col class="field-body" />
-<tbody valign="top">
-<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
-<li><strong>iterable</strong> &#8211; A generator, list, tuple, dictionary, or any other
-iterable object containing any combination of
-<tt class="xref py py-class docutils literal"><span class="pre">str</span></tt>, <a class="reference external" href="http://www.python-requests.org/en/latest/api/#requests.Request" title="requests.Request"><tt class="xref py py-class docutils literal"><span class="pre">requests.Request</span></tt></a>,
-<a class="reference external" href="http://www.python-requests.org/en/latest/api/#requests.PreparedRequest" title="requests.PreparedRequest"><tt class="xref py py-class docutils literal"><span class="pre">requests.PreparedRequest</span></tt></a>.  <tt class="xref py py-class docutils literal"><span class="pre">str</span></tt>
-(or any other <tt class="xref py py-class docutils literal"><span class="pre">basestring</span></tt>) will be executed
-as an HTTP <tt class="docutils literal"><span class="pre">GET</span></tt>.</li>
-<li><strong>maintainOrder</strong> &#8211; (optional) By default, the returned responses are
-guaranteed to be in the same order as the
-requests.  If this is not important to you, set
-this to False for a performance gain.</li>
-<li><strong>responsePreprocessor</strong> &#8211; (optional) Override the default
-preprocessor for these requests only.</li>
-</ul>
-</td>
-</tr>
-<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last">A <tt class="xref py py-class docutils literal"><span class="pre">ResponseIterator</span></tt> that may be iterated over to get a
-<a class="reference external" href="http://www.python-requests.org/en/latest/api/#requests.Response" title="requests.Response"><tt class="xref py py-class docutils literal"><span class="pre">requests.Response</span></tt></a> for each request.</p>
-</td>
-</tr>
-</tbody>
-</table>
+</dd></dl>
+
+<dl class="class">
+<dt id="simple_requests.Bundle">
+<em class="property">class </em><tt class="descclassname">simple_requests.</tt><tt class="descname">Bundle</tt><a class="headerlink" href="#simple_requests.Bundle" title="Permalink to this definition">¶</a></dt>
+<dd><p>This class is used internally to "bundle up" a request, response, and associated object (if it exists).</p>
+
+<dl class="attribute">
+<dt id="simple_requests.Bundle.request">
+<tt class="descname">request</tt><a class="headerlink" href="#simple_requests.Bundle.request" title="Permalink to this definition">¶</a></dt>
+<dd><p>An instance of <a class="reference external" href="http://www.python-requests.org/en/latest/api/#requests.Request" title="requests.Request"><tt class="xref py py-class docutils literal"><span class="pre">requests.Request</span></tt></a>.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simple_requests.Bundle.response">
+<tt class="descname">response</tt><a class="headerlink" href="#simple_requests.Bundle.response" title="Permalink to this definition">¶</a></dt>
+<dd><p>An instance of <a class="reference external" href="http://www.python-requests.org/en/latest/api/#requests.Response" title="requests.Response"><tt class="xref py py-class docutils literal"><span class="pre">requests.Response</span></tt></a>.  May be <tt class="docutils literal"><span class="pre">None</span></tt> if the request has not yet been sent or the raised an exception while being prepared.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simple_requests.Bundle.exception">
+<tt class="descname">exception</tt><a class="headerlink" href="#simple_requests.Bundle.exception" title="Permalink to this definition">¶</a></dt>
+<dd><p>An instance of <tt class="xref py py-class docutils literal"><span class="pre">Exception</span></tt></a>.  Will be <tt class="docutils literal"><span class="pre">None</span></tt> if the request has not yet been sent or was executed successfully.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simple_requests.Bundle.obj">
+<tt class="descname">obj</tt><a class="headerlink" href="#simple_requests.Bundle.obj" title="Permalink to this definition">¶</a></dt>
+<dd><p>The object associated with the request, if <a class="reference internal" href="#simple_requests.Requests.each" title="simple_requests.Requests.each"><tt class="xref py py-meth docutils literal"><span class="pre">each()</span></tt></a> was used, <tt class="docutils literal"><span class="pre">None</span></tt> otherwise.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simple_requests.Bundle.hasobj">
+<tt class="descname">hasobj</tt><a class="headerlink" href="#simple_requests.Bundle.hasobj" title="Permalink to this definition">¶</a></dt>
+<dd><p><tt class="docutils literal"><span class="pre">True</span></tt> if <a class="reference internal" href="#simple_requests.Bundle.obj" title="simple_requests.Bundle.obj"><tt class="xref py py-attr docutils literal"><span class="pre">obj</span></tt></a> is set to an associated object, <tt class="docutils literal"><span class="pre">False</span></tt> otherwise.  Necessary in case the object itself is <tt class="docutils literal"><span class="pre">None</span></tt>.</p>
 </dd></dl>
 
 </dd></dl>
@@ -213,7 +286,7 @@ preprocessor for these requests only.</li>
 <em class="property">class </em><tt class="descclassname">simple_requests.</tt><tt class="descname">ResponsePreprocessor</tt><a class="headerlink" href="#simple_requests.ResponsePreprocessor" title="Permalink to this definition">¶</a></dt>
 <dd><p>Default implementation of how responses are preprocessed.</p>
 <p>By default, successful responses are returned and errors are raised.
-Whatever is returned by <tt class="xref py py-meth docutils literal"><span class="pre">success()</span></tt> and <tt class="xref py py-meth docutils literal"><span class="pre">error()</span></tt> is what gets
+Whatever is returned by <a class="reference internal" href="#simple_requests.ResponsePreprocessor.success" title="simple_requests.ResponsePreprocessor.success"><tt class="xref py py-meth docutils literal"><span class="pre">success()</span></tt></a> and <a class="reference internal" href="#simple_requests.ResponsePreprocessor.error" title="simple_requests.ResponsePreprocessor.error"><tt class="xref py py-meth docutils literal"><span class="pre">error()</span></tt></a> is what gets
 returned by <a class="reference internal" href="#simple_requests.Requests.one" title="simple_requests.Requests.one"><tt class="xref py py-meth docutils literal"><span class="pre">one()</span></tt></a> and the iterator of <a class="reference internal" href="#simple_requests.Requests.swarm" title="simple_requests.Requests.swarm"><tt class="xref py py-meth docutils literal"><span class="pre">swarm()</span></tt></a>.</p>
 <p>There are several reasons you may want to override the default
 implementation:</p>
@@ -224,6 +297,35 @@ implementation:</p>
 specific way</li>
 <li>More...</li>
 </ul>
+
+<dl class="method">
+<dt id="simple_requests.ResponsePreprocessor.success">
+<tt class="descname">success</tt><big>(</big><em>bundle</em><big>)</big><a class="headerlink" href="#simple_requests.ResponsePreprocessor.success" title="Permalink to this definition">¶</a></dt>
+<dd><p>Handle a successful request.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>bundle</strong> &#8211; A <a class="reference internal" href="#simple_requests.Bundle" title="simple_requests.Bundle"><tt class="xref py py-class docutils literal"><span class="pre">Bundle</span></tt></a>.  The <a class="reference internal" href="#simple_requests.Bundle.response" title="simple_requests.Bundle.response"><tt class="xref py py-attr docutils literal"><span class="pre">response</span></tt></a> attribute will be populated, and <a class="reference internal" href="#simple_requests.Bundle.exception" title="simple_requests.Bundle.exception"><tt class="xref py py-attr docutils literal"><span class="pre">exception</span></tt></a> will be <tt class="docutils literal"><span class="pre">None</span></tt>.</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="simple_requests.ResponsePreprocessor.error">
+<tt class="descname">error</tt><big>(</big><em>bundle</em><big>)</big><a class="headerlink" href="#simple_requests.ResponsePreprocessor.error" title="Permalink to this definition">¶</a></dt>
+<dd><p>Handle a failed request.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>bundle</strong> &#8211; A <a class="reference internal" href="#simple_requests.Bundle" title="simple_requests.Bundle"><tt class="xref py py-class docutils literal"><span class="pre">Bundle</span></tt></a>.  The <a class="reference internal" href="#simple_requests.Bundle.exception" title="simple_requests.Bundle.exception"><tt class="xref py py-attr docutils literal"><span class="pre">exception</span></tt></a> attribute will be populated, but <a class="reference internal" href="#simple_requests.Bundle.response" title="simple_requests.Bundle.response"><tt class="xref py py-attr docutils literal"><span class="pre">response</span></tt></a> may be <tt class="docutils literal"><span class="pre">None</span></tt> (depending on the kind of error).</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
 </dd></dl>
 
 <dl class="class">

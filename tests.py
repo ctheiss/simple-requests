@@ -19,11 +19,11 @@ from unittest import main, TestCase
 from simple_requests import *
 
 class NoRaiseServerError(ResponsePreprocessor):
-    def error(self, request, exception):
-        if isinstance(exception, HTTPError):
-            return exception.response
+    def error(self, bundle):
+        if isinstance(bundle.exception, HTTPError):
+            return bundle.ret()
         else:
-            raise exception
+            raise bundle.exception
 
 class Test1Logic(TestCase):
     def setUp(self):
@@ -72,6 +72,7 @@ class Test1Logic(TestCase):
         responses = []
         start = time()
         for r1 in self.default.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200', 'http://cat-videos.net/3/OK:200', 'http://cat-videos.net/4/OK:200', 'http://cat-videos.net/5/OK:200' ]):
+            print r1
             responses.append(r1.url)
 
         self.assertAlmostEqual(time() - start, 1.2, delta = 0.04)
@@ -457,14 +458,49 @@ class Test1Logic(TestCase):
 
     def test_custom_preprocessor(self):
         class CustomPreprocessor(ResponsePreprocessor):
-            def success(self, response):
-                response.url += '!'
-                return response
+            def success(self, bundle):
+                bundle.response.url += '!'
+                return bundle.ret()
 
         start = time()
         self.assertEqual(self.default.one('http://cat-videos.net/1/OK:200', responsePreprocessor = CustomPreprocessor()).url, 'http://cat-videos.net/1!')
-
         self.assertAlmostEqual(time() - start, 0.4, delta = 0.04)
+
+    def test_each(self):
+        class Obj(object):
+            def __init__(self, data, request):
+                self.data = data
+                self.request = request
+
+        responses = []
+        start = time()
+        for r1, obj in self.noRaise.each([ Obj('AAA', 'http://cat-videos.net/1/Test:416'), Obj('BBB', 'http://cat-videos.net/2/OK:200') ]):
+            responses.append(( r1.url, r1.status_code, obj.data ))
+
+        self.assertAlmostEqual(time() - start, 5.2, delta = 0.04)
+        self.assertEqual([ ( 'http://cat-videos.net/2', 200, 'BBB' ), ( 'http://cat-videos.net/1', 416, 'AAA' ) ], responses)
+
+    def test_each_custom_map(self):
+        class Obj(object):
+            def __init__(self, data, status):
+                self.data = data
+                self.status = status
+
+        class Mapper(object):
+            def __init__(self):
+                self.count = 0
+
+            def torequest(self, i):
+                self.count += 1
+                return 'http://cat-videos.net/%d/%s' % ( self.count, i.status)
+
+        responses = []
+        start = time()
+        for r1, obj in self.noRaise.each([ Obj('XXX', 'OK:200:1'), Obj('YYY', 'OK:200') ], mapToRequest = Mapper().torequest):
+            responses.append(( r1.url, r1.status_code, obj.data ))
+
+        self.assertAlmostEqual(time() - start, 1, delta = 0.04)
+        self.assertEqual([ ( 'http://cat-videos.net/2', 200, 'YYY' ), ( 'http://cat-videos.net/1', 200, 'XXX' ) ], responses)
 
 
 class Test2RealRequests(TestCase):
@@ -502,4 +538,4 @@ class Test3InFlight(TestCase):
         requests.swarm([ 'http://cat-videos.net/1-of-5', 'http://cat-videos.net/2-of-5', 'http://cat-videos.net/3-of-5', 'http://cat-videos.net/4-of-5', 'http://cat-videos.net/5-of-5' ])
 
 if __name__ == '__main__':
-    main()
+    main(verbosity = 2)
