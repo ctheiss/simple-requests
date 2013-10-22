@@ -72,7 +72,6 @@ class Test1Logic(TestCase):
         responses = []
         start = time()
         for r1 in self.default.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200', 'http://cat-videos.net/3/OK:200', 'http://cat-videos.net/4/OK:200', 'http://cat-videos.net/5/OK:200' ]):
-            print r1
             responses.append(r1.url)
 
         self.assertAlmostEqual(time() - start, 1.2, delta = 0.04)

@@ -376,11 +376,11 @@ class Requests(object):
         self._requestQueue = _RequestQueue()
         self._retryQueue = _RetryQueue()
 
+        self._killed = False
+
         _inFlight.add(spawn(self._run))
 
     def _run(self):
-        done = False
-
         while True:
             try:
                 self.pool.wait_available()
@@ -388,7 +388,7 @@ class Requests(object):
                 retryGroup = self._retryQueue.getLatestGroup()
 
                 if reqGroup is None and retryGroup is None:
-                    if done:
+                    if self._killed:
                         break
                     else:
                         self._requestAdded.clear()
@@ -430,7 +430,15 @@ class Requests(object):
                     sleep(self.minSecondsBetweenRequests)
 
             except GreenletExit:
-                done = True
+                self._kill()
+
+    def _add(self, requestIterator, maintainOrder, responsePreprocessor):
+        if responsePreprocessor is not None and not isinstance(responsePreprocessor, ResponsePreprocessor):
+            raise TypeError('responsePreprocessor must be an instance of ResponsePreprocessor, not %s' % type(responsePreprocessor))
+        responseIterator = _ResponseIterator(maintainOrder, responsePreprocessor or self.responsePreprocessor)
+        self._requestQueue.add(requestIterator, responseIterator)
+        self._requestAdded.set()
+        return responseIterator
 
     def _skip(self, bundle):
         """Should the request be skipped altogether.  Return True to skip.
@@ -475,13 +483,9 @@ class Requests(object):
                 else:
                     responseIterator._add(bundle, requestIndex)
 
-    def _add(self, requestIterator, maintainOrder, responsePreprocessor):
-        if responsePreprocessor is not None and not isinstance(responsePreprocessor, ResponsePreprocessor):
-            raise TypeError('responsePreprocessor must be an instance of ResponsePreprocessor, not %s' % type(responsePreprocessor))
-        responseIterator = _ResponseIterator(maintainOrder, responsePreprocessor or self.responsePreprocessor)
-        self._requestQueue.add(requestIterator, responseIterator)
-        self._requestAdded.set()
-        return responseIterator
+    def _kill(self):
+        """Define the actions that should be taken when this object is killed."""
+        self._killed = True
 
     def one(self, request, responsePreprocessor = None):
         """Execute one request synchronously.
