@@ -114,12 +114,16 @@ class ResponsePreprocessor(object):
     def success(self, response):
         return response
 
-    def error(self, exception):
+    def error(self, request, exception):
         raise exception
 
 
 class RetryStrategy(object):
     """The base implementation, which doesn't retry at all."""
+    def verify(self, request, response):
+        if response.status_code >= 400:
+            raise HTTPError(response)
+
     def retry(self, request, exception, numTries):
         return -1
 
@@ -186,9 +190,9 @@ class _ResponseIterator(object):
     def __iter__(self):
         return self
 
-    def _add(self, response, exception, requestIndex):
+    def _add(self, request_response, exception, requestIndex):
         if self._responses is not None:
-            self._responses[requestIndex] = ( response, exception )
+            self._responses[requestIndex] = ( request_response, exception )
         self._inflight -= 1
         self._responseAdded.set()
 
@@ -201,18 +205,18 @@ class _ResponseIterator(object):
             if self._responses is not None and len(self._responses) > 0:
                 if self._currentIndex is None:
                     found = True
-                    response, exception = self._responses.popitem(last = False)[1]
+                    request_response, exception = self._responses.popitem(last = False)[1]
                 else:
                     if self._currentIndex in self._responses:
                         found = True
-                        response, exception = self._responses.pop(self._currentIndex)
+                        request_response, exception = self._responses.pop(self._currentIndex)
                         self._currentIndex += 1
 
             if found:
                 if exception is None:
-                    return self._preprocessor.success(response)
+                    return self._preprocessor.success(request_response)
                 else:
-                    return self._preprocessor.error(exception)
+                    return self._preprocessor.error(request_response, exception)
             else:
                 self._responseAdded.clear()
                 self._responseAdded.wait()
@@ -382,12 +386,17 @@ class Requests(object):
                     builtrequest = None
                     if retryGroup is None or (reqGroup is not None and reqGroup > retryGroup):
                         request, responseIterator, group, requestIndex = self._requestQueue.pop()
+                        obj = None
                         numTries = 0
+                        if isinstance(request, tuple):
+                            obj = request[0]
+                            request = request[1]
                         try:
-                            builtrequest = self._build(request)
+                            builtrequest = self._build(obj, request)
                         except Exception as ex:
-                            self._response(( request, None, responseIterator, group, requestIndex, numTries, ex ))
-                            request = None
+                            # An exception here isn't recoverable, so don't bother testing for retries
+                            responseIterator._add(request, ex, requestIndex)
+                            continue
                     else:
                         builtrequest, responseIterator, group, requestIndex, numTries = self._retryQueue.pop()
 
@@ -402,33 +411,33 @@ class Requests(object):
             except GreenletExit:
                 done = True
 
-    def _build(self, request):
+    def _build(self, obj, request):
         if isinstance(request, basestring):
             request = Request(method = 'GET', url = request)
         if isinstance(request, Request):
             request = self.session.prepare_request(request)
         if not isinstance(request, PreparedRequest):
             raise TypeError('Request must be an instance of: str (or unicode), Request, PreparedRequest, not %s.' % type(request))
+        if obj:
+            setattr(request, 'obj', obj)
         return request
 
     def _execute(self, request, responseIterator, group, requestIndex, numTries):
         try:
             response = self.session.send(request)
-
-            if response.status_code >= 400:
-                return request, response, responseIterator, group, requestIndex, numTries, HTTPError(response)
-            else:
-                return request, response, responseIterator, group, requestIndex, numTries, None
         except (Exception, GreenletExit) as ex:
             return request, None, responseIterator, group, requestIndex, numTries, ex
+
+        try:
+            self.retryStrategy.verify(request, response)
+        except Exception as ex:
+            return request, response, responseIterator, group, requestIndex, numTries, ex
+
+        return request, response, responseIterator, group, requestIndex, numTries, None
     
     def _response(self, status):
-        if isinstance(status, tuple):
-            request, response, responseIterator, group, requestIndex, numTries, exception = status
-            stopped = False
-        else:
-            request, response, responseIterator, group, requestIndex, numTries, exception = status.value
-            stopped = hasattr(status, 'stopped')
+        request, response, responseIterator, group, requestIndex, numTries, exception = status.value
+        stopped = hasattr(status, 'stopped')
         numTries += 1
 
         if exception is None:
@@ -441,14 +450,14 @@ class Requests(object):
         else:
             if stopped:
                 # A stop was sent, so don't add to the retry queue regardless of strategy
-                responseIterator._add(response, exception, requestIndex)
+                responseIterator._add(request, exception, requestIndex)
             else:
                 wait = self.retryStrategy.retry(request, exception, numTries)
                 if wait >= 0:
                     self._retryQueue.add(request, responseIterator, group, requestIndex, numTries, wait)
                     self._requestAdded.set()
                 else:
-                    responseIterator._add(response, exception, requestIndex)
+                    responseIterator._add(request, exception, requestIndex)
 
     def _add(self, requestIterator, maintainOrder, responsePreprocessor):
         if responsePreprocessor is not None and not isinstance(responsePreprocessor, ResponsePreprocessor):
@@ -504,6 +513,9 @@ class Requests(object):
                   :class:`requests.Response` for each request.
         """
         return self._add(iterable.__iter__(), maintainOrder, responsePreprocessor)
+
+    def map(self, iterable, mapToRequest = (lambda i: i.url), maintainOrder = False, responsePreprocessor = None):
+        return self._add(( ( i, mapToRequest(i) ) for i in iterable ), maintainOrder, responsePreprocessor)
 
     def stop(self, killExecuting = True):
         """Stop the execution of requests early.

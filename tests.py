@@ -19,7 +19,7 @@ from unittest import main, TestCase
 from simple_requests import *
 
 class NoRaiseServerError(ResponsePreprocessor):
-    def error(self, exception):
+    def error(self, request, exception):
         if isinstance(exception, HTTPError):
             return exception.response
         else:
