@@ -62,6 +62,7 @@ import gevent.monkey; gevent.monkey.patch_all(thread=False, select=False)
 from atexit import register
 from bisect import bisect_right
 from collections import OrderedDict
+from sys import exc_info
 from time import time
 from urllib2 import HTTPError as libHTTPError
 from weakref import WeakSet
@@ -115,7 +116,7 @@ class ResponsePreprocessor(object):
         return bundle.ret()
 
     def error(self, bundle):
-        raise bundle.exception
+        raise type(bundle.exception), bundle.exception, bundle.traceback
 
 
 class RetryStrategy(object):
@@ -183,6 +184,7 @@ class Bundle(object):
         self.request = request
         self.response = None
         self.exception = None
+        self.traceback = None
         self.obj = None
         self.hasobj = False
 
@@ -420,6 +422,7 @@ class Requests(object):
                     except Exception as ex:
                         # An exception here isn't recoverable, so don't bother testing for retries
                         bundle.exception = ex
+                        bundle.traceback = exc_info()[2]
                         responseIterator._add(bundle, requestIndex)
                         continue
                 else:
@@ -454,8 +457,10 @@ class Requests(object):
             bundle.response = self.session.send(bundle.request)
             self.retryStrategy.verify(bundle)
             bundle.exception = None
+            bundle.traceback = None
         except (Exception, GreenletExit) as ex:
             bundle.exception = ex
+            bundle.traceback = exc_info()[2]
 
         return bundle, responseIterator, group, requestIndex, numTries
 
