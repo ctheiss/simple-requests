@@ -321,7 +321,7 @@ class _RetryQueue(object):
 
 
 _inFlight = WeakSet()
-register(killall, _inFlight)
+register(killall, tuple(_inFlight))
 
 
 class Requests(object):
