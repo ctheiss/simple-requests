@@ -77,7 +77,7 @@ __all__ = ( 'Requests', 'ResponsePreprocessor', 'Strict', 'Lenient', 'Backoff', 
 
 
 class HTTPError(libHTTPError):
-    """Encapsulates server errors (status codes in the 400s and 500s).
+    """Encapsulates HTTP errors (status codes in the 400s and 500s).
 
     .. attribute:: code
 
@@ -106,7 +106,7 @@ class ResponsePreprocessor(object):
     There are several reasons you may want to override the default
     implementation:
 
-    * Don't raise an exception on server errors
+    * Don't raise an exception on HTTP errors
     * Add a side-effect, such as writing all responses to an archive file
     * Responses in your application must always be pre-processed in a
       specific way
@@ -133,7 +133,7 @@ class Strict(RetryStrategy):
 
     Retries up to two times, with 2 seconds between each attempt.
 
-    Non-server errors are not retried.
+    Only HTTP errors are retried.
     """
     def retry(self, bundle, numTries):
         if isinstance(bundle.exception, HTTPError) and numTries < 3:
@@ -145,10 +145,11 @@ class Lenient(RetryStrategy):
     """A :class:`RetryStrategy` designed for very small servers.
 
     Small servers are expected to go down every now and then, so this
-    strategy retries requests up to 4 times, with a full minute between each
+    strategy retries requests that returned an HTTP error up to 4 times,
+    with a full minute between each
     attempt.
 
-    Non-server errors are retried only once after 60 seconds.
+    Other (non-HTTP) errors are retried only once after 60 seconds.
     """
     def retry(self, bundle, numTries):
         if numTries == 1 or (isinstance(bundle.exception, HTTPError) and numTries < 5):
@@ -159,11 +160,11 @@ class Lenient(RetryStrategy):
 class Backoff(RetryStrategy):
     """A :class:`RetryStrategy` designed for APIs.
 
-    Since APIs are *expected* to work, this implementation retries many times,
-    with an exponentially-increasing time in between each request (capped at
-    60 seconds).
+    Since APIs are *expected* to work, this implementation retries requests
+    that return HTTP errors many times, with an exponentially-increasing
+    time in between each request (capped at 60 seconds).
 
-    Non-server errors are retried only once after 10 seconds.
+    Other (non-HTTP) errors are retried only once after 10 seconds.
     """
     def retry(self, bundle, numTries):
         if isinstance(bundle.exception, HTTPError):
@@ -338,7 +339,7 @@ class Requests(object):
                           subclass). Allows you to define if and how a request
                           should be retried on failure. The default
                           implementation (:class:`Strict`) retries failed
-                          requests twice, for server errors only, with at least
+                          requests twice, for HTTP errors only, with at least
                           2 seconds between each subsequent request. Two other
                           implementations are included: :class:`Lenient` (good
                           for really small servers, perhaps hosted out of
@@ -360,7 +361,7 @@ class Requests(object):
         maintaining the number of concurrent requests.  Changes to this object
         should be done before any requests are sent.
     """
-    def __init__(self, concurrent = 2, minSecondsBetweenRequests = 0.15, retryStrategy = Strict(), responsePreprocessor = ResponsePreprocessor()):
+    def __init__(self, concurrent = 2, minSecondsBetweenRequests = 0.15, timeout = None, retryStrategy = Strict(), responsePreprocessor = ResponsePreprocessor()):
         if not isinstance(retryStrategy, RetryStrategy):
             raise TypeError('retryStrategy must be an instance of RetryStrategy, not %s' % type(retryStrategy))
 
@@ -531,7 +532,7 @@ class Requests(object):
         :param maintainOrder: (optional) By default, the returned responses are
                               guaranteed to be in the same order as the
                               requests.  If this is not important to you, set
-                              this to False for a performance gain.
+                              this to False for a slight performance gain.
         :param responsePreprocessor: (optional) Override the default
                                      preprocessor for these requests only.
         :returns: A :class:`ResponseIterator` that may be iterated over to get a
@@ -575,9 +576,10 @@ class Requests(object):
     def stop(self, killExecuting = True):
         """Stop the execution of requests early.
 
-        The :meth:`swarm` method will try hard to finish executing all requests,
-        even if the iterator has fallen out of scope, or an exception was
-        raised, or even if the execution of the main module is finished.
+        The :meth:`swarm` and :meth:`each` methods will try hard to finish
+        executing all requests, even if the iterator has fallen out of scope,
+        or an exception was raised, or even if the execution of the main module
+        is finished.
 
         Use this method to cancel all pending requests.
 

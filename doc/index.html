@@ -55,7 +55,7 @@
 
     <span class="c"># Asynchronously send requests for each link found on the profile pages</span>
     <span class="c"># These requests take precedence over those in the outer loop to minimize overall waiting</span>
-    <span class="c"># Order doesn&#39;t matter this time either, so turn that off for a performance gain</span>
+    <span class="c"># Order doesn&#39;t matter this time either, so turn that off for a slight performance gain</span>
     <span class="k">for</span> <span class="n">friends_response</span> <span class="ow">in</span> <span class="n">requests</span><span class="o">.</span><span class="n">swarm</span><span class="p">(</span><span class="n">profile_response</span><span class="o">.</span><span class="n">links</span><span class="p">,</span> <span class="n">maintainOrder</span> <span class="o">=</span> <span class="bp">False</span><span class="p">):</span>
 
         <span class="c"># Do something intelligent with the responses, like using</span>
@@ -86,7 +86,7 @@ seconds.</li>
 Allows you to define if and how a request should
 be retried on failure. The default implementation
 (<a class="reference internal" href="#simple_requests.Strict" title="simple_requests.Strict"><tt class="xref py py-class docutils literal"><span class="pre">Strict</span></tt></a>) retries failed requests twice, for
-server errors only, with at least 2 seconds between
+HTTP errors only, with at least 2 seconds between
 each subsequent request. Two other implementations
 are included: <a class="reference internal" href="#simple_requests.Lenient" title="simple_requests.Lenient"><tt class="xref py py-class docutils literal"><span class="pre">Lenient</span></tt></a> (good for really small
 servers, perhaps hosted out of somebody&#8217;s home), and
@@ -183,7 +183,7 @@ preprocessor for these requests only.</li>
 
 <dl class="method">
 <dt id="simple_requests.Requests.each">
-<tt class="descname">each</tt><big>(</big><em>iterable</em>, <em>mapToRequest=(lambda i: i.request)</em>, <em>maintainOrder=True</em>, <em>responsePreprocessor=None</em><big>)</big><a class="headerlink" href="#simple_requests.Requests.each" title="Permalink to this definition">¶</a></dt>
+<tt class="descname">each</tt><big>(</big><em>iterable</em>, <em>mapToRequest=(lambda i: i.request)</em>, <em>maintainOrder=False</em>, <em>responsePreprocessor=None</em><big>)</big><a class="headerlink" href="#simple_requests.Requests.each" title="Permalink to this definition">¶</a></dt>
 <dd><p>Execute a request for each object.</p>
 <p>Subsequent calls to <a class="reference internal" href="#simple_requests.Requests.each" title="simple_requests.Requests.each"><tt class="xref py py-meth docutils literal"><span class="pre">each()</span></tt></a>, <a class="reference internal" href="#simple_requests.Requests.swarm" title="simple_requests.Requests.swarm"><tt class="xref py py-meth docutils literal"><span class="pre">swarm()</span></tt></a> or <a class="reference internal" href="#simple_requests.Requests.one" title="simple_requests.Requests.one"><tt class="xref py py-meth docutils literal"><span class="pre">one()</span></tt></a> on the same
 <a class="reference internal" href="#simple_requests.Requests" title="simple_requests.Requests"><tt class="xref py py-class docutils literal"><span class="pre">Requests</span></tt></a> instance will be prioritized <em>over</em> earlier calls.
@@ -221,7 +221,7 @@ preprocessor for these requests only.</li>
 <dt id="simple_requests.Requests.stop">
 <tt class="descname">stop</tt><big>(</big><em>killExecuting=True</em><big>)</big><a class="headerlink" href="#simple_requests.Requests.stop" title="Permalink to this definition">¶</a></dt>
 <dd><p>Stop the execution of requests early.</p>
-<p>The <a class="reference internal" href="#simple_requests.Requests.swarm" title="simple_requests.Requests.swarm"><tt class="xref py py-meth docutils literal"><span class="pre">swarm()</span></tt></a> method will try hard to finish executing all requests,
+<p>The <a class="reference internal" href="#simple_requests.Requests.swarm" title="simple_requests.Requests.swarm"><tt class="xref py py-meth docutils literal"><span class="pre">swarm()</span></tt></a> and <a class="reference internal" href="#simple_requests.Requests.each" title="simple_requests.Requests.each"><tt class="xref py py-meth docutils literal"><span class="pre">each()</span></tt></a> methods will try hard to finish executing all requests,
 even if the iterator has fallen out of scope, or an exception was
 raised, or even if the execution of the main module is finished.</p>
 <p>Use this method to cancel all pending requests.</p>
@@ -276,7 +276,7 @@ server side-effects.</td>
 <dl class="attribute">
 <dt id="simple_requests.Bundle.obj">
 <tt class="descname">obj</tt><a class="headerlink" href="#simple_requests.Bundle.obj" title="Permalink to this definition">¶</a></dt>
-<dd><p>The object associated with the request, if <a class="reference internal" href="#simple_requests.Requests.each" title="simple_requests.Requests.each"><tt class="xref py py-meth docutils literal"><span class="pre">each()</span></tt></a> was used, <tt class="docutils literal"><span class="pre">None</span></tt> otherwise.</p>
+<dd><p>The object associated with the request, if <a class="reference internal" href="#simple_requests.Requests.each" title="simple_requests.Requests.each"><tt class="xref py py-meth docutils literal"><span class="pre">each()</span></tt></a> was used. <tt class="docutils literal"><span class="pre">None</span></tt> otherwise.</p>
 </dd></dl>
 
 <dl class="attribute">
@@ -297,7 +297,7 @@ returned by <a class="reference internal" href="#simple_requests.Requests.one" t
 <p>There are several reasons you may want to override the default
 implementation:</p>
 <ul class="simple">
-<li>Don&#8217;t raise an exception on server errors</li>
+<li>Don&#8217;t raise an exception on HTTP errors</li>
 <li>Add a side-effect, such as writing all responses to an archive file</li>
 <li>Responses in your application must always be pre-processed in a
 specific way</li>
@@ -339,7 +339,7 @@ specific way</li>
 <em class="property">class </em><tt class="descclassname">simple_requests.</tt><tt class="descname">Strict</tt><a class="headerlink" href="#simple_requests.Strict" title="Permalink to this definition">¶</a></dt>
 <dd><p>A good default <tt class="xref py py-class docutils literal"><span class="pre">RetryStrategy</span></tt>.</p>
 <p>Retries up to two times, with 2 seconds between each attempt.</p>
-<p>Non-server errors are not retried.</p>
+<p>Only HTTP errors are retried.</p>
 </dd></dl>
 
 <dl class="class">
@@ -347,25 +347,25 @@ specific way</li>
 <em class="property">class </em><tt class="descclassname">simple_requests.</tt><tt class="descname">Lenient</tt><a class="headerlink" href="#simple_requests.Lenient" title="Permalink to this definition">¶</a></dt>
 <dd><p>A <tt class="xref py py-class docutils literal"><span class="pre">RetryStrategy</span></tt> designed for very small servers.</p>
 <p>Small servers are expected to go down every now and then, so this
-strategy retries requests up to 4 times, with a full minute between each
+strategy retries requests that returned an HTTP error up to 4 times, with a full minute between each
 attempt.</p>
-<p>Non-server errors are retried only once after 60 seconds.</p>
+<p>Other (non-HTTP) errors are retried only once after 60 seconds.</p>
 </dd></dl>
 
 <dl class="class">
 <dt id="simple_requests.Backoff">
 <em class="property">class </em><tt class="descclassname">simple_requests.</tt><tt class="descname">Backoff</tt><a class="headerlink" href="#simple_requests.Backoff" title="Permalink to this definition">¶</a></dt>
 <dd><p>A <tt class="xref py py-class docutils literal"><span class="pre">RetryStrategy</span></tt> designed for APIs.</p>
-<p>Since APIs are <em>expected</em> to work, this implementation retries many times,
+<p>Since APIs are <em>expected</em> to work, this implementation retries requests that return HTTP errors many times,
 with an exponentially-increasing time in between each request (capped at
 60 seconds).</p>
-<p>Non-server errors are retried only once after 10 seconds.</p>
+<p>Other (non-HTTP) errors are retried only once after 10 seconds.</p>
 </dd></dl>
 
 <dl class="class">
 <dt id="simple_requests.HTTPError">
 <em class="property">class </em><tt class="descclassname">simple_requests.</tt><tt class="descname">HTTPError</tt><big>(</big><em>response</em><big>)</big><a class="headerlink" href="#simple_requests.HTTPError" title="Permalink to this definition">¶</a></dt>
-<dd><p>Encapsulates server errors (status codes in the 400s and 500s).</p>
+<dd><p>Encapsulates HTTP errors (status codes in the 400s and 500s).</p>
 <dl class="attribute">
 <dt id="simple_requests.HTTPError.code">
 <tt class="descname">code</tt><a class="headerlink" href="#simple_requests.HTTPError.code" title="Permalink to this definition">¶</a></dt>
@@ -387,8 +387,8 @@ with an exponentially-increasing time in between each request (capped at
 </dd></dl>
 
     <div class="footer">
-        &copy; Copyright 2013, Corey Theiss.
-      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2b3.
+        &copy; Copyright 2013, Corey Theiss.  Last updated 2014.
+      <br/> Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2b3.
     </div>
   </body>
 </html>
