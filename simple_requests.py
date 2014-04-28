@@ -20,6 +20,7 @@ There is also some added functionality not available out-of-the-box from the bas
 * Request thresholding
 * Automatic retry on failure, with three different retry strategies included that focus on different applications (big server scrape, small server scrape, API)
 * Lazy loading and minimal object caching to keep the memory footprint down
+* Checks with smart defaults to avoid killing your system (e.g. opening too many connections at once) or the remote server (e.g. making too many requests per second)
 
 Usage
 -----
