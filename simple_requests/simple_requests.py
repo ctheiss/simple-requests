@@ -72,30 +72,8 @@ from gevent import GreenletExit, killall, sleep, spawn
 from gevent.event import Event
 from gevent.pool import Pool
 
+from . import HTTPError
 from requests import PreparedRequest, Request, Response, Session
-
-__all__ = ( 'Requests', 'ResponsePreprocessor', 'Strict', 'Lenient', 'Backoff', 'HTTPError' )
-
-
-class HTTPError(libHTTPError):
-    """Encapsulates HTTP errors (status codes in the 400s and 500s).
-
-    .. attribute:: code
-
-        Status code for this error.
-
-    .. attribute:: msg
-
-        The reason (associated with the status code).
-
-    .. attribute:: response
-
-        The instance of :class:`requests.Response` which triggered the error.
-    """
-    def __init__(self, response):
-        super(HTTPError, self).__init__(response.url, response.status_code, response.reason, response.headers, response.raw)
-        self.response = response
-
 
 class ResponsePreprocessor(object):
     """Default implementation of how responses are preprocessed.
@@ -261,7 +239,6 @@ class _RequestQueue(object):
         """Assumes getLatestGroup was called immediately before pop and returned not-None, on the same thread, with no slices in between"""
         status = self.queue[0]
         ret = tuple(status[1:])
-        status[2]._inflight += 1
         try:
             status[1] = status[0].next()
             status[4] += 1
@@ -411,6 +388,7 @@ class Requests(object):
                         bundle = Bundle(request)
 
                     if self._skip(bundle):
+                        responseIterator._inflight += 1
                         responseIterator._add(bundle, requestIndex)
                         continue
 
@@ -425,6 +403,7 @@ class Requests(object):
                         # An exception here isn't recoverable, so don't bother testing for retries
                         bundle.exception = ex
                         bundle.traceback = exc_info()[2]
+                        responseIterator._inflight += 1
                         responseIterator._add(bundle, requestIndex)
                         continue
                 else:
@@ -456,6 +435,7 @@ class Requests(object):
 
     def _execute(self, bundle, responseIterator, group, requestIndex, numTries):
         try:
+            responseIterator._inflight += 1
             bundle.response = self.session.send(bundle.request)
             self.retryStrategy.verify(bundle)
             bundle.exception = None
@@ -467,6 +447,10 @@ class Requests(object):
         return bundle, responseIterator, group, requestIndex, numTries
 
     def _response(self, status):
+        if isinstance(status.value, GreenletExit):
+            # This greenlet was killed before it even started.
+            return
+
         bundle, responseIterator, group, requestIndex, numTries = status.value
         stopped = hasattr(status, 'stopped')
         numTries += 1
@@ -474,7 +458,7 @@ class Requests(object):
         if bundle.exception is None:
             responseIterator._add(bundle, requestIndex)
         elif isinstance(bundle.exception, GreenletExit):
-            # Execution was killed
+            # Execution was killed in-flight
             responseIterator._inflight -= 1
             if responseIterator._inflight == 0:
                 responseIterator._responseAdded.set()
