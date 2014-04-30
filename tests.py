@@ -51,7 +51,7 @@ class Test1Logic(TestCase):
             if g[3] is not None:
                 wait = float(g[3])
             else:
-                wait = defaultSendTime
+                wait = defaultSendTime - 0.001 # Epsilon, since sleep is defined as "will wait at *least* as long as..."
 
             sleep(wait)
 
@@ -66,7 +66,7 @@ class Test1Logic(TestCase):
 
         # The first request always suffers through various init times of lazily-loaded objects;
         #  make a throw-away one here to avoid affecting the tests
-        self.default.one('http://cat-videos.net/1/OK:200').url
+        self.default.one('http://cat-videos.net/setup/OK:200').url
 
     def test_sync(self):
         start = time()
@@ -352,6 +352,18 @@ class Test1Logic(TestCase):
         self.assertEqual({ '1/X/A', '1/X/B', '1/X/C', '2/X/A', '2/X/B', '2/X/C', '3/X/A', '3/X/B', '3/X/C', '4/X/A', '4/X/B', '4/X/C' }, responses)    
         self.default.minSecondsBetweenRequests = oldValue
 
+    def test_big_swarm_in_swarm_noorder(self):
+        responses = set()
+        oldValue = self.default.minSecondsBetweenRequests
+        self.default.minSecondsBetweenRequests = 0
+        start = time()
+        for r1 in self.default.swarm([ 'http://cat-videos.net/1/OK:200:3', 'http://cat-videos.net/2/OK:200:1', 'http://cat-videos.net/3/OK:200:3', 'http://cat-videos.net/4/OK:200:5' ], maintainOrder = False):
+            r2 = self.default.one(r1.url + '/X/OK:200:1')
+            for r3 in self.default.swarm([ r2.url + '/A/OK:200:2', r2.url + '/B/OK:200:1', r2.url + '/C/OK:200:1' ], maintainOrder = False):
+                responses.add(r3.url[22:])
+        self.assertEqual({ '1/X/A', '1/X/B', '1/X/C', '2/X/A', '2/X/B', '2/X/C', '3/X/A', '3/X/B', '3/X/C', '4/X/A', '4/X/B', '4/X/C' }, responses)    
+        self.default.minSecondsBetweenRequests = oldValue
+
     def test_swarm_in_swarm_noorder1(self):
         responses = set()
         start = time()
@@ -401,20 +413,26 @@ class Test1Logic(TestCase):
         start = time()
         for r1 in self.noRaise.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200', 'http://cat-videos.net/3/OK:200', 'http://cat-videos.net/4/OK:200' ]):
             responses.append(r1.url)
-            # The third request is sent before this stop is issued.  This is because the pool wait is released (when _execute completes) *before* the iterator event is fired (which happens in _response)
+            # Without the following sleep to yield, sometimes the third request would be sent,
+            # and sometimes it wouldn't (depending on whether the pool wait is released after _execute completes,
+            # or the iterator event is fired in _response)
+            # The sleep will "guarantee" that the third request is sent
+            # This also means that the third response will sleep for 0.1 seconds
+            sleep(0.1)
             self.noRaise.stop(killExecuting = False)
 
-        self.assertAlmostEqual(time() - start, self.defaultSendTime * 2, delta = 0.04)
+        self.assertAlmostEqual(time() - start, self.defaultSendTime * 2 + 0.1, delta = 0.04)
         self.assertEqual([ 'http://cat-videos.net/1', 'http://cat-videos.net/2', 'http://cat-videos.net/3' ], responses)
 
     def test_swarm_stop2(self):
         responses = []
         start = time()
-        for r1 in self.noRaise.swarm([ 'http://cat-videos.net/1/Test:418', 'http://cat-videos.net/2/OK:200', 'http://cat-videos.net/3/OK:200', 'http://cat-videos.net/4/OK:200' ], maintainOrder = False):
+        for r1 in self.noRaise.swarm([ 'http://cat-videos.net/1/Test:418', 'http://cat-videos.net/2/OK:200', 'http://cat-videos.net/3/OK:200', 'http://cat-videos.net/4/OK:200', 'http://cat-videos.net/5/OK:200' ], maintainOrder = False):
             responses.append(r1.url)
+            sleep(0.1)
             self.noRaise.stop(killExecuting = False)
 
-        self.assertAlmostEqual(time() - start, self.defaultSendTime * 2 + self.noRaise.minSecondsBetweenRequests, delta = 0.04)
+        self.assertAlmostEqual(time() - start, self.defaultSendTime * 2 + self.noRaise.minSecondsBetweenRequests + 0.1, delta = 0.04)
         self.assertEqual([ 'http://cat-videos.net/2', 'http://cat-videos.net/3', 'http://cat-videos.net/4' ], responses)
 
     def test_swarm_stop3(self):
@@ -422,9 +440,10 @@ class Test1Logic(TestCase):
         start = time()
         for r1 in self.noRaise.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/Test:418', 'http://cat-videos.net/3/OK:200', 'http://cat-videos.net/4/OK:200' ]):
             responses.append(r1.url)
+            sleep(0.1)
             self.noRaise.stop(killExecuting = False)
 
-        self.assertAlmostEqual(time() - start, self.defaultSendTime * 2, delta = 0.04)
+        self.assertAlmostEqual(time() - start, self.defaultSendTime * 2 + 0.1, delta = 0.04)
         self.assertEqual([ 'http://cat-videos.net/1', 'http://cat-videos.net/2', 'http://cat-videos.net/3' ], responses)
 
     def test_swarm_stop4(self):
@@ -549,4 +568,4 @@ class Test3InFlight(TestCase):
         requests.swarm([ 'http://cat-videos.net/1-of-5', 'http://cat-videos.net/2-of-5', 'http://cat-videos.net/3-of-5', 'http://cat-videos.net/4-of-5', 'http://cat-videos.net/5-of-5' ])
 
 if __name__ == '__main__':
-    main(verbosity = 2)
+    main(verbosity = 2, catchbreak = True)

@@ -32,6 +32,17 @@ Usage
             # Do something intelligent with the responses, like using
             # regex to parse the HTML (see http://stackoverflow.com/a/1732454)
             friends_response.html
+
+Release History
+---------------
+1.1.0
+======================
+**API Changes**
+- Timeout parameter added to ``Requests.__init__``
+**Bug Fixes**
+- No more errors / warnings on exit
+- Eliminate "Too many open files" error when swarming *many* streaming requests
+- Fixed a couple documentation errors
 """
 
 from setuptools import setup
@@ -46,8 +57,8 @@ setup(
     description='Asynchronous requests in Python without thinking about it',
     long_description=__doc__,
     install_requires=[
-        'gevent',
-        'requests'
+        'gevent >= 1.0',
+        'requests >= 2.1.0'
     ],
     py_modules=['simple_requests'],
     zip_safe=False,

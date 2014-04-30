@@ -64,7 +64,7 @@ from sys import exc_info
 from time import time
 from weakref import WeakSet
 
-from gevent import GreenletExit, killall, sleep, spawn
+from gevent import Greenlet, GreenletExit, killall, sleep
 from gevent.event import Event
 from gevent.pool import Pool
 
@@ -111,13 +111,24 @@ class Bundle(object):
 
 
 class _ResponseIterator(object):
+    _global_counter = 0
+
     def __init__(self, maintainOrder, preprocessor):
         self._currentIndex = 0 if maintainOrder else None
         self._preprocessor = preprocessor
         self._responseAdded = Event()
         self._responses = OrderedDict()
+        
+        # A request is in-flight the moment it is popped off the request queue, until it is either added to this iterator or discarded (due to being killed)
+        # The "done" variable is necessary to handle some corner cases, such as right at the beginning before the first request is in-flight
         self._inflight = 0
         self._done = False
+
+        # Purely for debugging purposes to help differentiate the iterators
+        # It's surprisingly frequent that new iterators will occupy exactly the same stop
+        # in memory as a previous iterator, making id(self) not very useful.
+        _ResponseIterator._global_counter += 1
+        self._counter = _ResponseIterator._global_counter
 
     def __iter__(self):
         return self
@@ -126,10 +137,12 @@ class _ResponseIterator(object):
         if self._responses is not None:
             self._responses[requestIndex] = bundle
         self._inflight -= 1
+        #print('(Notify it.) %s [%d] %d, %s, %d, %s' % ( time(), self._counter, self._inflight, self._done, len(self._responses), bundle.request.url ))
         self._responseAdded.set()
 
     def next(self):
         while True:
+            #print('(Loop it.  ) %s [%d] %d, %s, %d' % ( time(), self._counter, self._inflight, self._done, len(self._responses) ))
             if self._inflight == 0 and self._done and (self._responses is None or len(self._responses) == 0):
                 raise StopIteration
 
@@ -145,11 +158,13 @@ class _ResponseIterator(object):
                         self._currentIndex += 1
 
             if found:
+                #print('(Return it.) %s [%d] %d, %s, %d, %s' % ( time(), self._counter, self._inflight, self._done, len(self._responses), bundle.request.url ))
                 if bundle.exception is None:
                     return self._preprocessor.success(bundle)
                 else:
                     return self._preprocessor.error(bundle)
             else:
+                #print('(Wait it.  ) %s [%d] %d, %s, %d' % ( time(), self._counter, self._inflight, self._done, len(self._responses) ))
                 self._responseAdded.clear()
                 self._responseAdded.wait()
 
@@ -177,6 +192,7 @@ class _RequestQueue(object):
         """Assumes getLatestGroup was called immediately before pop and returned not-None, on the same thread, with no slices in between"""
         status = self.queue[0]
         ret = tuple(status[1:])
+        status[2]._inflight += 1
         try:
             status[1] = status[0].next()
             status[4] += 1
@@ -237,7 +253,7 @@ class _RetryQueue(object):
 
 
 _inFlight = WeakSet()
-#register(killall, tuple(_inFlight))
+register(killall, tuple(_inFlight))
 
 
 class Requests(object):
@@ -297,7 +313,7 @@ class Requests(object):
 
         self._killed = False
 
-        _inFlight.add(spawn(self._run))
+        _inFlight.add(Greenlet.spawn(self._run))
 
     def _run(self):
         while True:
@@ -326,7 +342,6 @@ class Requests(object):
                         bundle = Bundle(request)
 
                     if self._skip(bundle):
-                        responseIterator._inflight += 1
                         responseIterator._add(bundle, requestIndex)
                         continue
 
@@ -341,13 +356,18 @@ class Requests(object):
                         # An exception here isn't recoverable, so don't bother testing for retries
                         bundle.exception = ex
                         bundle.traceback = exc_info()[2]
-                        responseIterator._inflight += 1
                         responseIterator._add(bundle, requestIndex)
                         continue
                 else:
                     bundle, responseIterator, group, requestIndex, numTries = self._retryQueue.pop()
 
-                self.pool.spawn(self._execute, bundle, responseIterator, group, requestIndex, numTries).rawlink(self._response)
+                #print('(Execute   ) %s [%d] %d, %s, %d, %s' % ( time(), responseIterator._counter, responseIterator._inflight, responseIterator._done, len(responseIterator._responses), bundle.request.url ))
+                g = Greenlet(self._execute, bundle)
+                # Attach data as a property, right on the greenlet.  This way, we won't lose the information if the greenlet is killed before it starts
+                g.data = ( bundle, responseIterator, group, requestIndex, numTries )
+                g.rawlink(self._response)
+                self.pool.start(g)
+
                 if self.minSecondsBetweenRequests > 0:
                     sleep(self.minSecondsBetweenRequests)
 
@@ -371,10 +391,8 @@ class Requests(object):
         """
         return False
 
-    def _execute(self, bundle, responseIterator, group, requestIndex, numTries):
+    def _execute(self, bundle):
         try:
-            if numTries == 0:
-                responseIterator._inflight += 1
             bundle.response = self.session.send(bundle.request)
             self.retryStrategy.verify(bundle)
             bundle.exception = None
@@ -383,16 +401,19 @@ class Requests(object):
             bundle.exception = ex
             bundle.traceback = exc_info()[2]
 
-        return bundle, responseIterator, group, requestIndex, numTries
+        return None # bundle is already a property of the greenlet
 
     def _response(self, status):
-        if isinstance(status.value, GreenletExit):
-            # This greenlet was killed before it even started.
-            return
-
-        bundle, responseIterator, group, requestIndex, numTries = status.value
-        stopped = hasattr(status, 'stopped')
+        bundle, responseIterator, group, requestIndex, numTries = status.data
         numTries += 1
+
+        #print('(Response  ) %s [%d] %d, %s, %d, %s' % ( time(), responseIterator._counter, responseIterator._inflight, responseIterator._done, len(responseIterator._responses), bundle.request.url ))
+
+        if status.value is not None:
+            if isinstance(status.value, GreenletExit):
+                bundle.exception = status.value
+            else:
+                raise Exception('Unexpected return value of greenlet: %s' % status.value)
 
         if bundle.exception is None:
             responseIterator._add(bundle, requestIndex)
@@ -402,7 +423,7 @@ class Requests(object):
             if responseIterator._inflight == 0:
                 responseIterator._responseAdded.set()
         else:
-            if stopped:
+            if hasattr(status, 'stopped'):
                 # A stop was sent, so don't add to the retry queue regardless of strategy
                 responseIterator._add(bundle, requestIndex)
             else:
