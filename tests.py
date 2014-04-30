@@ -35,6 +35,8 @@ class Test1Logic(TestCase):
         self.default = Requests()
         self.highConcurrency = Requests(concurrent = 5)
         self.noRaise = Requests(responsePreprocessor = NoRaiseServerError())
+        self.defaultSendTime = defaultSendTime = 0.4
+        self.defaultRetryWait = 2
 
         parser = compile('^(.+)/([^:]+):([0-9]+):?([.0-9]+)?$')
 
@@ -49,7 +51,7 @@ class Test1Logic(TestCase):
             if g[3] is not None:
                 wait = float(g[3])
             else:
-                wait = 0.4
+                wait = defaultSendTime
 
             sleep(wait)
 
@@ -75,7 +77,7 @@ class Test1Logic(TestCase):
         self.assertEqual(self.default.one('http://cat-videos.net/4/OK:200').url, 'http://cat-videos.net/4')
         self.assertEqual(self.default.one('http://cat-videos.net/5/OK:200').url, 'http://cat-videos.net/5')
 
-        self.assertAlmostEqual(time() - start, 2.0, delta = 0.04)
+        self.assertAlmostEqual(time() - start, self.defaultSendTime * 5, delta = 0.04)
 
     def test_async(self):
         responses = []
@@ -83,10 +85,10 @@ class Test1Logic(TestCase):
         for r1 in self.default.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200', 'http://cat-videos.net/3/OK:200', 'http://cat-videos.net/4/OK:200', 'http://cat-videos.net/5/OK:200' ]):
             responses.append(r1.url)
 
-        self.assertAlmostEqual(time() - start, 1.2, delta = 0.04)
+        self.assertAlmostEqual(time() - start, self.defaultSendTime * 3, delta = 0.04)
         self.assertEqual([ 'http://cat-videos.net/1', 'http://cat-videos.net/2', 'http://cat-videos.net/3', 'http://cat-videos.net/4', 'http://cat-videos.net/5' ], responses)
 
-    def te1st_async_high_mintime(self):
+    def test_async_high_mintime(self):
         responses = []
         oldValue = self.default.minSecondsBetweenRequests
         self.default.minSecondsBetweenRequests = 0.25
@@ -94,20 +96,20 @@ class Test1Logic(TestCase):
         for r1 in self.default.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200', 'http://cat-videos.net/3/OK:200', 'http://cat-videos.net/4/OK:200', 'http://cat-videos.net/5/OK:200' ]):
             responses.append(r1.url)
 
-        self.assertAlmostEqual(time() - start, 1.4, delta = 0.04)
+        self.assertAlmostEqual(time() - start, self.default.minSecondsBetweenRequests * 4 + self.defaultSendTime, delta = 0.04)
         self.assertEqual([ 'http://cat-videos.net/1', 'http://cat-videos.net/2', 'http://cat-videos.net/3', 'http://cat-videos.net/4', 'http://cat-videos.net/5' ], responses)
         self.default.minSecondsBetweenRequests = oldValue
 
-    def te1st_async_high_concurrency(self):
+    def test_async_high_concurrency(self):
         responses = []
         start = time()
         for r1 in self.highConcurrency.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200', 'http://cat-videos.net/3/OK:200', 'http://cat-videos.net/4/OK:200', 'http://cat-videos.net/5/OK:200', 'http://cat-videos.net/6/OK:200' ]):
             responses.append(r1.url)
 
-        self.assertAlmostEqual(time() - start, 1.15, delta = 0.04)
+        self.assertAlmostEqual(time() - start, self.highConcurrency.minSecondsBetweenRequests * 5 + self.defaultSendTime, delta = 0.04)
         self.assertEqual([ 'http://cat-videos.net/1', 'http://cat-videos.net/2', 'http://cat-videos.net/3', 'http://cat-videos.net/4', 'http://cat-videos.net/5', 'http://cat-videos.net/6' ], responses)
 
-    def te1st_async_low_mintime1(self):
+    def test_async_low_mintime1(self):
         responses = []
         oldValue = self.highConcurrency.minSecondsBetweenRequests
         self.highConcurrency.minSecondsBetweenRequests = 0.05
@@ -115,11 +117,11 @@ class Test1Logic(TestCase):
         for r1 in self.highConcurrency.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200', 'http://cat-videos.net/3/OK:200', 'http://cat-videos.net/4/OK:200', 'http://cat-videos.net/5/OK:200' ]):
             responses.append(r1.url)
 
-        self.assertAlmostEqual(time() - start, 0.6, delta = 0.04)
+        self.assertAlmostEqual(time() - start, self.highConcurrency.minSecondsBetweenRequests * 4 + self.defaultSendTime, delta = 0.04)
         self.assertEqual([ 'http://cat-videos.net/1', 'http://cat-videos.net/2', 'http://cat-videos.net/3', 'http://cat-videos.net/4', 'http://cat-videos.net/5' ], responses)
         self.highConcurrency.minSecondsBetweenRequests = oldValue
 
-    def te1st_async_low_mintime2(self):
+    def test_async_low_mintime2(self):
         responses = []
         oldValue = self.highConcurrency.minSecondsBetweenRequests
         self.highConcurrency.minSecondsBetweenRequests = 0.05
@@ -131,7 +133,7 @@ class Test1Logic(TestCase):
         self.assertEqual([ 'http://cat-videos.net/1', 'http://cat-videos.net/2', 'http://cat-videos.net/3', 'http://cat-videos.net/4', 'http://cat-videos.net/5', 'http://cat-videos.net/6' ], responses)
         self.highConcurrency.minSecondsBetweenRequests = oldValue
 
-    def te1st_async_order1(self):
+    def test_async_order1(self):
         responses = []
         start = time()
         for r1 in self.default.swarm([ 'http://cat-videos.net/1/OK:200:3', 'http://cat-videos.net/2/OK:200', 'http://cat-videos.net/3/OK:200', 'http://cat-videos.net/4/OK:200', 'http://cat-videos.net/5/OK:200' ]):
@@ -141,7 +143,7 @@ class Test1Logic(TestCase):
         self.assertAlmostEqual(time() - start, 3.5, delta = 0.04)
         self.assertEqual([ 'http://cat-videos.net/1', 'http://cat-videos.net/2', 'http://cat-videos.net/3', 'http://cat-videos.net/4', 'http://cat-videos.net/5' ], responses)
 
-    def te1st_async_order2(self):
+    def test_async_order2(self):
         responses = []
         start = time()
         for r1 in self.default.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200', 'http://cat-videos.net/3/OK:200:3', 'http://cat-videos.net/4/OK:200', 'http://cat-videos.net/5/OK:200' ]):
@@ -151,7 +153,7 @@ class Test1Logic(TestCase):
         self.assertAlmostEqual(time() - start, 3.7, delta = 0.04)
         self.assertEqual([ 'http://cat-videos.net/1', 'http://cat-videos.net/2', 'http://cat-videos.net/3', 'http://cat-videos.net/4', 'http://cat-videos.net/5' ], responses)
 
-    def te1st_async_noorder1(self):
+    def test_async_noorder1(self):
         responses = set()
         start = time()
         for r1 in self.default.swarm([ 'http://cat-videos.net/1/OK:200:3', 'http://cat-videos.net/2/OK:200', 'http://cat-videos.net/3/OK:200', 'http://cat-videos.net/4/OK:200', 'http://cat-videos.net/5/OK:200' ], maintainOrder = False):
@@ -161,7 +163,7 @@ class Test1Logic(TestCase):
         self.assertAlmostEqual(time() - start, 3.1, delta = 0.04)
         self.assertEqual({ 'http://cat-videos.net/1', 'http://cat-videos.net/2', 'http://cat-videos.net/3', 'http://cat-videos.net/4', 'http://cat-videos.net/5' }, responses)
 
-    def te1st_async_noorder2(self):
+    def test_async_noorder2(self):
         responses = set()
         start = time()
         for r1 in self.default.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200', 'http://cat-videos.net/3/OK:200:3', 'http://cat-videos.net/4/OK:200', 'http://cat-videos.net/5/OK:200' ], maintainOrder = False):
@@ -171,7 +173,7 @@ class Test1Logic(TestCase):
         self.assertAlmostEqual(time() - start, 3.5, delta = 0.04)
         self.assertEqual({ 'http://cat-videos.net/1', 'http://cat-videos.net/2', 'http://cat-videos.net/3', 'http://cat-videos.net/4', 'http://cat-videos.net/5' }, responses)
 
-    def te1st_empty(self):
+    def test_empty(self):
         responses = set()
         start = time()
         for r1 in self.default.swarm([]):
@@ -179,7 +181,7 @@ class Test1Logic(TestCase):
 
         self.assertAlmostEqual(time() - start, 0, delta = 0.04)
 
-    def te1st_sync_exception1(self):
+    def test_sync_exception1(self):
         start = time()
         try:
             self.default.one('http://cat-videos.net/1/Test:450')
@@ -190,7 +192,7 @@ class Test1Logic(TestCase):
 
         self.assertAlmostEqual(time() - start, 5.2, delta = 0.04)
 
-    def te1st_sync_exception2(self):
+    def test_sync_exception2(self):
         start = time()
         try:
             self.default.one('http://cat-videos.net/1/Test:640')
@@ -200,14 +202,14 @@ class Test1Logic(TestCase):
 
         self.assertAlmostEqual(time() - start, 0.4, delta = 0.04)
 
-    def te1st_sync_noraise_exception1(self):
+    def test_sync_noraise_exception1(self):
         start = time()
         r1 = self.noRaise.one('http://cat-videos.net/1/Test:450')
         self.assertEqual(r1.reason, 'Test')
         self.assertEqual(r1.status_code, 450)
         self.assertAlmostEqual(time() - start, 5.2, delta = 0.04)
 
-    def te1st_sync_noraise_exception2(self):
+    def test_sync_noraise_exception2(self):
         start = time()
         try:
             self.noRaise.one('http://cat-videos.net/1/Test:640')
@@ -217,7 +219,7 @@ class Test1Logic(TestCase):
 
         self.assertAlmostEqual(time() - start, 0.4, delta = 0.04)
 
-    def te1st_sync_notrequest(self):
+    def test_sync_notrequest(self):
         start = time()
         try:
             self.default.one(123)
@@ -226,7 +228,7 @@ class Test1Logic(TestCase):
             pass
         self.assertAlmostEqual(time() - start, 0, delta = 0.04)
 
-    def te1st_sync_lenient1(self):
+    def test_sync_lenient1(self):
         oldValue = self.default.retryStrategy
         self.default.retryStrategy = Lenient()
         start = time()
@@ -240,7 +242,7 @@ class Test1Logic(TestCase):
         self.assertAlmostEqual(time() - start, 242, delta = 0.04)
         self.default.retryStrategy = oldValue
 
-    def te1st_sync_lenient2(self):
+    def test_sync_lenient2(self):
         oldValue = self.default.retryStrategy
         self.default.retryStrategy = Lenient()
         start = time()
@@ -253,7 +255,7 @@ class Test1Logic(TestCase):
         self.assertAlmostEqual(time() - start, 60.8, delta = 0.04)
         self.default.retryStrategy = oldValue
 
-    def te1st_sync_backoff1(self):
+    def test_sync_backoff1(self):
         oldValue = self.default.retryStrategy
         self.default.retryStrategy = Backoff()
         start = time()
@@ -267,7 +269,7 @@ class Test1Logic(TestCase):
         self.assertAlmostEqual(time() - start, 247.9, delta = 0.04)
         self.default.retryStrategy = oldValue
 
-    def te1st_sync_backoff2(self):
+    def test_sync_backoff2(self):
         oldValue = self.default.retryStrategy
         self.default.retryStrategy = Backoff()
         start = time()
@@ -280,7 +282,7 @@ class Test1Logic(TestCase):
         self.assertAlmostEqual(time() - start, 10.8, delta = 0.04)
         self.default.retryStrategy = oldValue
 
-    def te1st_swarm_in_swarm_order1(self):
+    def test_swarm_in_swarm_order1(self):
         responses = []
         start = time()
         for r1 in self.default.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200' ]):
@@ -291,7 +293,7 @@ class Test1Logic(TestCase):
         self.assertAlmostEqual(time() - start, 2.2, delta = 0.04)
         self.assertEqual([ 'http://cat-videos.net/1/A', 'http://cat-videos.net/1/B', 'http://cat-videos.net/1/C', 'http://cat-videos.net/2/A', 'http://cat-videos.net/2/B', 'http://cat-videos.net/2/C' ], responses)
 
-    def te1st_swarm_in_swarm_order2(self):
+    def test_swarm_in_swarm_order2(self):
         responses = []
         start = time()
         for r1 in self.highConcurrency.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200' ]):
@@ -302,7 +304,7 @@ class Test1Logic(TestCase):
         self.assertAlmostEqual(time() - start, 2, delta = 0.04)
         self.assertEqual([ 'http://cat-videos.net/1/A', 'http://cat-videos.net/1/B', 'http://cat-videos.net/1/C', 'http://cat-videos.net/2/A', 'http://cat-videos.net/2/B', 'http://cat-videos.net/2/C' ], responses)
 
-    def te1st_swarm_in_swarm_order3(self):
+    def test_swarm_in_swarm_order3(self):
         responses = []
         start = time()
         for r1 in self.default.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200' ]):
@@ -313,7 +315,7 @@ class Test1Logic(TestCase):
         self.assertAlmostEqual(time() - start, 2.6, delta = 0.04)
         self.assertEqual([ 'http://cat-videos.net/1/A', 'http://cat-videos.net/1/B', 'http://cat-videos.net/1/C', 'http://cat-videos.net/2/A', 'http://cat-videos.net/2/B', 'http://cat-videos.net/2/C' ], responses)
 
-    def te1st_swarm_in_swarm_order4(self):
+    def test_swarm_in_swarm_order4(self):
         responses = []
         start = time()
         for r1 in self.highConcurrency.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200' ]):
@@ -324,7 +326,7 @@ class Test1Logic(TestCase):
         self.assertAlmostEqual(time() - start, 2.4, delta = 0.04)
         self.assertEqual([ 'http://cat-videos.net/1/A', 'http://cat-videos.net/1/B', 'http://cat-videos.net/1/C', 'http://cat-videos.net/2/A', 'http://cat-videos.net/2/B', 'http://cat-videos.net/2/C' ], responses)
 
-    def te1st_big_swarm_in_swarm_order(self):
+    def test_big_swarm_in_swarm_order(self):
         responses = []
         oldValue = self.default.minSecondsBetweenRequests
         self.default.minSecondsBetweenRequests = 0
@@ -337,7 +339,7 @@ class Test1Logic(TestCase):
         self.assertEqual([ '1/X/A', '1/X/B', '1/X/C', '2/X/A', '2/X/B', '2/X/C', '3/X/A', '3/X/B', '3/X/C', '4/X/A', '4/X/B', '4/X/C' ], responses)    
         self.default.minSecondsBetweenRequests = oldValue
 
-    def te1st_big_swarm_in_swarm_noorder(self):
+    def test_big_swarm_in_swarm_noorder(self):
         responses = set()
         oldValue = self.default.minSecondsBetweenRequests
         self.default.minSecondsBetweenRequests = 0
@@ -350,7 +352,7 @@ class Test1Logic(TestCase):
         self.assertEqual({ '1/X/A', '1/X/B', '1/X/C', '2/X/A', '2/X/B', '2/X/C', '3/X/A', '3/X/B', '3/X/C', '4/X/A', '4/X/B', '4/X/C' }, responses)    
         self.default.minSecondsBetweenRequests = oldValue
 
-    def te1st_swarm_in_swarm_noorder1(self):
+    def test_swarm_in_swarm_noorder1(self):
         responses = set()
         start = time()
         for r1 in self.default.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200' ]):
@@ -361,7 +363,7 @@ class Test1Logic(TestCase):
         self.assertAlmostEqual(time() - start, 2.7, delta = 0.04)
         self.assertEqual({ 'http://cat-videos.net/1/A', 'http://cat-videos.net/1/B', 'http://cat-videos.net/1/C', 'http://cat-videos.net/2/A', 'http://cat-videos.net/2/B', 'http://cat-videos.net/2/C' }, responses)
 
-    def te1st_swarm_in_swarm_noorder2(self):
+    def test_swarm_in_swarm_noorder2(self):
         responses = set()
         start = time()
         for r1 in self.highConcurrency.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200' ]):
@@ -372,7 +374,7 @@ class Test1Logic(TestCase):
         self.assertAlmostEqual(time() - start, 2.6, delta = 0.04)
         self.assertEqual({ 'http://cat-videos.net/1/A', 'http://cat-videos.net/1/B', 'http://cat-videos.net/1/C', 'http://cat-videos.net/2/A', 'http://cat-videos.net/2/B', 'http://cat-videos.net/2/C' }, responses)
 
-    def te1st_swarm_in_swarm_order_exception(self):
+    def test_swarm_in_swarm_order_exception(self):
         responses = []
         start = time()
         for r1 in self.noRaise.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200:1', 'http://cat-videos.net/3/OK:200' ]):
@@ -383,7 +385,7 @@ class Test1Logic(TestCase):
         self.assertAlmostEqual(time() - start, 16.6, delta = 0.04)
         self.assertEqual([ 'http://cat-videos.net/1/A', 'http://cat-videos.net/1/B', 'http://cat-videos.net/2/A', 'http://cat-videos.net/2/B', 'http://cat-videos.net/3/A', 'http://cat-videos.net/3/B' ], responses)
 
-    def te1st_swarm_in_swarm_noorder_exception(self):
+    def test_swarm_in_swarm_noorder_exception(self):
         responses = []
         start = time()
         for r1 in self.noRaise.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200:1', 'http://cat-videos.net/3/OK:200' ]):
@@ -397,12 +399,13 @@ class Test1Logic(TestCase):
     def test_swarm_stop1(self):
         responses = []
         start = time()
-        for r1 in self.noRaise.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200', 'http://cat-videos.net/3/OK:200' ]):
+        for r1 in self.noRaise.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/OK:200', 'http://cat-videos.net/3/OK:200', 'http://cat-videos.net/4/OK:200' ]):
             responses.append(r1.url)
+            # The third request is sent before this stop is issued.  This is because the pool wait is released (when _execute completes) *before* the iterator event is fired (which happens in _response)
             self.noRaise.stop(killExecuting = False)
 
-        self.assertAlmostEqual(time() - start, 0.55, delta = 0.04)
-        self.assertEqual([ 'http://cat-videos.net/1', 'http://cat-videos.net/2' ], responses)
+        self.assertAlmostEqual(time() - start, self.defaultSendTime * 2, delta = 0.04)
+        self.assertEqual([ 'http://cat-videos.net/1', 'http://cat-videos.net/2', 'http://cat-videos.net/3' ], responses)
 
     def test_swarm_stop2(self):
         responses = []
@@ -411,18 +414,18 @@ class Test1Logic(TestCase):
             responses.append(r1.url)
             self.noRaise.stop(killExecuting = False)
 
-        self.assertAlmostEqual(time() - start, 0.8, delta = 0.04)
-        self.assertEqual([ 'http://cat-videos.net/2', 'http://cat-videos.net/3' ], responses)
+        self.assertAlmostEqual(time() - start, self.defaultSendTime * 2 + self.noRaise.minSecondsBetweenRequests, delta = 0.04)
+        self.assertEqual([ 'http://cat-videos.net/2', 'http://cat-videos.net/3', 'http://cat-videos.net/4' ], responses)
 
     def test_swarm_stop3(self):
         responses = []
         start = time()
-        for r1 in self.noRaise.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/Test:418', 'http://cat-videos.net/3/OK:200' ]):
+        for r1 in self.noRaise.swarm([ 'http://cat-videos.net/1/OK:200', 'http://cat-videos.net/2/Test:418', 'http://cat-videos.net/3/OK:200', 'http://cat-videos.net/4/OK:200' ]):
             responses.append(r1.url)
             self.noRaise.stop(killExecuting = False)
 
-        self.assertAlmostEqual(time() - start, 0.55, delta = 0.04)
-        self.assertEqual([ 'http://cat-videos.net/1', 'http://cat-videos.net/2' ], responses)
+        self.assertAlmostEqual(time() - start, self.defaultSendTime * 2, delta = 0.04)
+        self.assertEqual([ 'http://cat-videos.net/1', 'http://cat-videos.net/2', 'http://cat-videos.net/3' ], responses)
 
     def test_swarm_stop4(self):
         responses = []
@@ -431,7 +434,7 @@ class Test1Logic(TestCase):
             responses.append(r1.url)
             self.noRaise.stop(killExecuting = False)
 
-        self.assertAlmostEqual(time() - start, 5.2, delta = 0.04)
+        self.assertAlmostEqual(time() - start, self.defaultSendTime * 3 + self.defaultRetryWait * 2, delta = 0.04)
         self.assertEqual([ 'http://cat-videos.net/1', 'http://cat-videos.net/2', 'http://cat-videos.net/3', 'http://cat-videos.net/4' ], responses)
 
     def test_swarm_stop5(self):
@@ -440,7 +443,7 @@ class Test1Logic(TestCase):
         sleep(0.1)
         self.noRaise.stop(killExecuting = False)
         response = it.next()
-        self.assertAlmostEqual(time() - start, 0.4, delta = 0.04)
+        self.assertAlmostEqual(time() - start, self.defaultSendTime, delta = 0.04)
         self.assertEqual('http://cat-videos.net/1', response.url)
 
     def test_swarm_stop_and_kill1(self):
@@ -464,7 +467,7 @@ class Test1Logic(TestCase):
         except StopIteration:
             self.assertAlmostEqual(time() - start, 0.1, delta = 0.04)
 
-    def te1st_custom_preprocessor(self):
+    def test_custom_preprocessor(self):
         class CustomPreprocessor(ResponsePreprocessor):
             def success(self, bundle):
                 bundle.response.url += '!'
@@ -488,7 +491,7 @@ class Test1Logic(TestCase):
         self.assertAlmostEqual(time() - start, 5.2, delta = 0.04)
         self.assertEqual([ ( 'http://cat-videos.net/2', 200, 'BBB' ), ( 'http://cat-videos.net/1', 416, 'AAA' ) ], responses)
 
-    def te1st_each_custom_map(self):
+    def test_each_custom_map(self):
         class Obj(object):
             def __init__(self, data, status):
                 self.data = data
@@ -521,7 +524,7 @@ class Test2RealRequests(TestCase):
     def key(self, response):
         return response.json()['args']['key']
 
-    def te1st_big_swarm_in_swarm_order(self):
+    def test_big_swarm_in_swarm_order(self):
         responses = []
         start = time()
         for r1 in self.requests.swarm([ self.url(3, '1'), self.url(1, '2'), self.url(3, '3'), self.url(5, '4') ]):
@@ -533,7 +536,7 @@ class Test2RealRequests(TestCase):
 
 
 class Test3InFlight(TestCase):
-    def te1st_all_swarm_get_executed(self):
+    def test_all_swarm_get_executed(self):
         requests = Requests()
 
         # Monkey patch the actual send to print the url to console, so we can see if it worked
