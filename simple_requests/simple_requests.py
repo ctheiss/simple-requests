@@ -251,11 +251,6 @@ class _RetryQueue(object):
                 responseIterator._responseAdded.set()
         self.timelist = []
 
-
-_inFlight = WeakSet()
-register(killall, tuple(_inFlight))
-
-
 class Requests(object):
     """A session of requests.
 
@@ -313,7 +308,10 @@ class Requests(object):
 
         self._killed = False
 
-        _inFlight.add(Greenlet.spawn(self._run))
+        Requests._runningRequests.add(Greenlet.spawn(self._run))
+
+    def __del__(self):
+        self._kill()
 
     def _run(self):
         while True:
@@ -438,6 +436,12 @@ class Requests(object):
         """Define the actions that should be taken when this object is killed."""
         self._killed = True
 
+    _runningRequests = WeakSet()
+
+    @staticmethod
+    def _killall():
+        killall(tuple(Requests._runningRequests))
+
     def one(self, request, responsePreprocessor = None):
         """Execute one request synchronously.
 
@@ -544,3 +548,5 @@ class Requests(object):
         else:
             for greenlet in self.pool.greenlets:
                 setattr(greenlet, 'stopped', True)
+
+register(Requests._killall)

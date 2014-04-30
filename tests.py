@@ -18,11 +18,6 @@ from unittest import main, TestCase
 
 from simple_requests import *
 
-# Pre-load some things that are normally done lazily, to avoid messing up our times.
-#'abc'.encode('idna').decode('utf-8')
-#from netrc import netrc, NetrcParseError
-#print '4e[' + str(hex(id(getcurrent()))) + '] ' + str(time())
-
 class NoRaiseServerError(ResponsePreprocessor):
     def error(self, bundle):
         if isinstance(bundle.exception, HTTPError):
@@ -239,7 +234,7 @@ class Test1Logic(TestCase):
             self.assertEqual(err.msg, 'Test')
             self.assertEqual(err.code, 550)
 
-        self.assertAlmostEqual(time() - start, 242, delta = 0.04)
+        self.assertAlmostEqual(time() - start, 242, delta = 0.08)
         self.default.retryStrategy = oldValue
 
     def test_sync_lenient2(self):
@@ -266,7 +261,7 @@ class Test1Logic(TestCase):
             self.assertEqual(err.msg, 'Test')
             self.assertEqual(err.code, 560)
 
-        self.assertAlmostEqual(time() - start, 247.9, delta = 0.04)
+        self.assertAlmostEqual(time() - start, 247.9, delta = 0.08)
         self.default.retryStrategy = oldValue
 
     def test_sync_backoff2(self):
@@ -394,7 +389,7 @@ class Test1Logic(TestCase):
                 responses.append(r2.url)
                 sleep(0.1)
 
-        self.assertAlmostEqual(time() - start, 16.6, delta = 0.04)
+        self.assertAlmostEqual(time() - start, 16.6, delta = 0.08)
         self.assertEqual([ 'http://cat-videos.net/1/A', 'http://cat-videos.net/1/B', 'http://cat-videos.net/2/A', 'http://cat-videos.net/2/B', 'http://cat-videos.net/3/A', 'http://cat-videos.net/3/B' ], responses)
 
     def test_swarm_in_swarm_noorder_exception(self):
@@ -405,7 +400,7 @@ class Test1Logic(TestCase):
                 responses.append(r2.url)
                 sleep(0.1)
 
-        self.assertAlmostEqual(time() - start, 16.3, delta = 0.04)
+        self.assertAlmostEqual(time() - start, 16.3, delta = 0.08)
         self.assertEqual([ 'http://cat-videos.net/1/B', 'http://cat-videos.net/1/A', 'http://cat-videos.net/2/B', 'http://cat-videos.net/2/A', 'http://cat-videos.net/3/B', 'http://cat-videos.net/3/A' ], responses)
 
     def test_swarm_stop1(self):
@@ -556,6 +551,7 @@ class Test2RealRequests(TestCase):
 
 class Test3InFlight(TestCase):
     def test_all_swarm_get_executed(self):
+
         requests = Requests()
 
         # Monkey patch the actual send to print the url to console, so we can see if it worked
