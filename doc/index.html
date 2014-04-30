@@ -70,7 +70,7 @@
 </div>
 <dl class="class">
 <dt id="simple_requests.Requests">
-<em class="property">class </em><tt class="descclassname">simple_requests.</tt><tt class="descname">Requests</tt><big>(</big><em>concurrent=2</em>, <em>minSecondsBetweenRequests=0.15</em>, <em>retryStrategy=<a class="reference internal" href="#simple_requests.Strict" title="simple_requests.Strict"><tt class="xref py py-class docutils literal"><span class="pre">Strict()</span></tt></a></em>, <em>responsePreprocessor=<a class="reference internal" href="#simple_requests.ResponsePreprocessor" title="simple_requests.ResponsePreprocessor"><tt class="xref py py-class docutils literal"><span class="pre">ResponsePreprocessor()</span></tt></a></em><big>)</big><a class="headerlink" href="#simple_requests.Requests" title="Permalink to this definition">¶</a></dt>
+<em class="property">class </em><tt class="descclassname">simple_requests.</tt><tt class="descname">Requests</tt><big>(</big><em>concurrent=2</em>, <em>minSecondsBetweenRequests=0.15</em>, <em>defaultTimeout=None</em>, <em>retryStrategy=<a class="reference internal" href="#simple_requests.Strict" title="simple_requests.Strict"><tt class="xref py py-class docutils literal"><span class="pre">Strict()</span></tt></a></em>, <em>responsePreprocessor=<a class="reference internal" href="#simple_requests.ResponsePreprocessor" title="simple_requests.ResponsePreprocessor"><tt class="xref py py-class docutils literal"><span class="pre">ResponsePreprocessor()</span></tt></a></em><big>)</big><a class="headerlink" href="#simple_requests.Requests" title="Permalink to this definition">¶</a></dt>
 <dd><p>Creates a session and a thread pool. The intention is to have one instance
 per server that you're hitting at the same time.</p>
 <table class="docutils field-list" frame="void" rules="none">
@@ -83,6 +83,13 @@ allowed for this instance.</li>
 <li><strong>minSecondsBetweenRequests</strong> &#8211; (optional) Every request is guaranteed to
 be separated by at least this many
 seconds.</li>
+<li><strong>defaultTimeout</strong> &#8211; (optional) Stop waiting after the server is
+unresponsive for this many seconds.  See <a class="reference external" href="http://docs.python-requests.org/en/latest/user/quickstart/#timeouts">the requests docs</a>
+for an exact definition of what constitutes a
+timeout.  Should a timeout occur, the request will
+either be retried or an exception will be raised
+(depending on <tt class="xref py py-class docutils literal"><span class="pre">retryStrategy</span></tt> and
+<tt class="xref py py-class docutils literal"><span class="pre">responsePreprocessor</span></tt>).</li>
 <li><strong>retryStrategy</strong> &#8211; (optional) An instance of <tt class="xref py py-class docutils literal"><span class="pre">RetryStrategy</span></tt> (or subclass).
 Allows you to define if and how a request should
 be retried on failure. The default implementation
@@ -149,7 +156,7 @@ preprocessor for this request only.</li>
 <a class="reference internal" href="#simple_requests.Requests" title="simple_requests.Requests"><tt class="xref py py-class docutils literal"><span class="pre">Requests</span></tt></a> instance will be prioritized <em>over</em> earlier calls.
 This is generally aligned with how responses are processed (one
 response is inspected, which leads to more requests whose responses
-are inspected... etc.)</p>
+are inspected… etc.)</p>
 <p>This method will try hard to finish executing all requests, even if the
 iterator has fallen out of scope, or an exception was raised, or even
 if the execution of the main module is finished.  Use the <a class="reference internal" href="#simple_requests.Requests.stop" title="simple_requests.Requests.stop"><tt class="xref py py-meth docutils literal"><span class="pre">stop()</span></tt></a>
@@ -386,6 +393,36 @@ with an exponentially-increasing time in between each request (capped at
 </dd></dl>
 
 </dd></dl>
+
+
+<dl class="function">
+<dt id="simple_requests.patch">
+<em class="property">function </em><tt class="descclassname">simple_requests.</tt><tt class="descname">patch</tt><big>(</big><em>allowIncompleteResponses=False</em>, <em>avoidTooManyConnections=False</em><big>)</big><a class="headerlink" href="#simple_requests.patch" title="Permalink to this definition">¶</a></dt>
+<dd><p>Each argument can be True to perform the patch, or False to "unpatch".</p>
+
+<dl class="parameter">
+<dt id="simple_requests.patch.allowIncompleteResponses">
+<tt class="descname">allowIncompleteResponses</tt><a class="headerlink" href="#simple_requests.patch.allowIncompleteResponses" title="Permalink to this definition">¶</a></dt>
+<dd><p>Affects <a class="reference external" href="https://docs.python.org/2/library/httplib.html" title="httplib"><tt class="xref py py-class docutils literal"><span class="pre">httplib</span></tt></a>. Allows
+continued processing when the actual amount of data is different than the amount specified ahead of time by the server (using the content-length header).  What are the possible scenarios?</p><p><ul class="first simple"><li>The server calculated the content-length incorrectly, and you actually got all the data.  This patch will fix this scenario.  This happens surprisingly often.</li><li>You didn't get the full payload.  In this case, you'll likely get a <tt class="docutils literal"><span class="pre">ContentDecodingError</span></tt> if the response has been compressed, or truncated content (which may be chopped in the middle of a multi-byte character, resulting in a <tt class="docutils literal"><span class="pre">UnicodeError</span></tt>). If you're parsing structured data, like XML or JSON, it will almost certainly be invalid. So, in many cases, you'll get an error raised anyways.</li></ul></p><p>Note that this patch affects <em>all</em> python http connections, even those outside of simple-requests, requests, and urllib3.</p>
+</dd></dl>
+
+<dl class="parameter">
+<dt id="simple_requests.patch.avoidTooManyConnections">
+<tt class="descname">avoidTooManyConnections</tt><a class="headerlink" href="#simple_requests.patch.avoidTooManyConnections" title="Permalink to this definition">¶</a></dt>
+<dd><p>Affects <a class="reference external" href="https://github.com/shazow/urllib3" title="urllib3"><tt class="xref py py-class docutils literal"><span class="pre">urllib3</span></tt></a>. simple-requests ultimately uses the extremely clever urllib3 library to manage connection pooling.  This library implements a <em>leaky bucket</em> paradigm for handling pools.  What does this mean?  Some number of connections are kept open with each server to avoid the costly operation of opening a new one. Should the maximum number of connections be exceeded, for whatever reason, a new connection will be created.  This <em>bonus connection</em> will be discarded once it's job is done; it will not go back into the pool.  This is considered to be a good compromise between performance and number of open connections (which count as open files).</p><p>There are some scenarios whereby the number of open connections keeps increasing faster than they can be closed, and eventually, you get <tt class="docutils literal"><span class="pre">socket.error: [Errno 24] Too many open files</span></tt>.  After this point, it's probably unrecoverable.</p><p>How many open connections can you have before this is a problem?  On many systems, around 900.</p><p>This patch will add a speed-limit to the creation of new <tt class="docutils literal"><span class="pre">urllib3</span></tt> connections. As long as there are fewer than 200 open connections, new ones will be created immediately.  After that point, new connections are opened at a rate of 1 every 10 seconds.  Once the number of open connections drops to below 200, they are created immediately again.</p><p>Why is a speed-limit used instead of just blocking new connections from being opened?  Because there are scenarios where this would cause a deadlock:</p>
+<div class="highlight-python"><div class="highlight"><pre>
+<span class="k">for</span> <span class="n">r1</span> <span class="ow">in</span> <span class="n">requests</span><span class="o">.</span><span class="n">swarm</span><span class="p">(</span><span class="n">urls1</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">r2</span> <span class="ow">in</span> <span class="n">requests</span><span class="o">.</span><span class="n">swarm</span><span class="p">(</span><span class="n">urls2</span><span class="p">):</span>
+        <span class="k">…</span>
+        <span class="k">for</span> <span class="n">r200</span> <span class="ow">in</span> <span class="n">requests</span><span class="o">.</span><span class="n">swarm</span><span class="p">(</span><span class="n">urls200</span><span class="p">):</span>
+            <span class="n">requests</span><span class="o">.</span><span class="n">one</span><span class="p">(</span><span class="n">url2001</span><span class="p">)</span>
+</pre></div></div>
+<p>If the problem is that a server is responding incredibly slowly to a swarm of requests, and even the speed limit isn't helping, your best options are:</p><p><ul class="first simple"><li>Restructure your program to avoid nesting swarms/each.</li><li>Drastically decrease <tt class="xref py py-class docutils literal"><span class="pre">concurrent</span></tt>, increase <tt class="xref py py-class docutils literal"><span class="pre">minSecondsBetweenRequests</span></tt>, or add a <tt class="xref py py-class docutils literal"><span class="pre">timeout</span></tt> (all parameters to <a class="reference internal" href="#simple_requests.Requests" title="simple_requests.Requests"><tt class="xref py py-attr docutils literal"><span class="pre">Requests</span></tt></a>).</li></ul></p>
+</dd></dl>
+
+</dd></dl>
+
 
     <div class="footer">
         &copy; Copyright 2013, Corey Theiss.  Last updated 2014.

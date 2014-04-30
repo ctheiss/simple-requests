@@ -69,8 +69,9 @@ from gevent.event import Event
 from gevent.pool import Pool
 
 from requests import PreparedRequest, Request, Response, Session
+from requests.adapters import HTTPAdapter
 
-from . import HTTPError
+from compat import HTTPError
 from strategy import RetryStrategy, Strict
 
 
@@ -251,6 +252,14 @@ class _RetryQueue(object):
                 responseIterator._responseAdded.set()
         self.timelist = []
 
+
+class _DefaultTimeoutHTTPAdapter(HTTPAdapter):
+    def send(self, request, timeout = None, **kwargs):
+        if timeout is None:
+            timeout = self.defaultTimeout
+        return super(_DefaultTimeoutHTTPAdapter, self).send(request, timeout = timeout, **kwargs)
+
+
 class Requests(object):
     """A session of requests.
 
@@ -262,6 +271,14 @@ class Requests(object):
     :param minSecondsBetweenRequests: (optional) Every request is guaranteed to
                                       be separated by at least this many
                                       seconds.
+    :param defaultTimeout: (Optional) Stop waiting after the server is
+                           unresponsive for this many seconds.  See
+                           `the requests docs <http://docs.python-requests.org/en/latest/user/quickstart/#timeouts>`_
+                           for an exact definition of what constitutes a
+                           timeout.  Should a timeout occur, the request will
+                           either be retried or an exception will be raised
+                           (depending on :param:`retryStrategy` and
+                            :param:`responsePreprocessor`).
     :param retryStrategy: (optional) An instance of :class:`RetryStrategy` (or
                           subclass). Allows you to define if and how a request
                           should be retried on failure. The default
@@ -288,7 +305,7 @@ class Requests(object):
         maintaining the number of concurrent requests.  Changes to this object
         should be done before any requests are sent.
     """
-    def __init__(self, concurrent = 2, minSecondsBetweenRequests = 0.15, timeout = None, retryStrategy = Strict(), responsePreprocessor = ResponsePreprocessor()):
+    def __init__(self, concurrent = 2, minSecondsBetweenRequests = 0.15, defaultTimeout = None, retryStrategy = Strict(), responsePreprocessor = ResponsePreprocessor()):
         if not isinstance(retryStrategy, RetryStrategy):
             raise TypeError('retryStrategy must be an instance of RetryStrategy, not %s' % type(retryStrategy))
 
@@ -301,6 +318,11 @@ class Requests(object):
         self.retryStrategy = retryStrategy
         self.responsePreprocessor = responsePreprocessor
 
+        self._adapter = _DefaultTimeoutHTTPAdapter()
+        self.session.mount('http://', self._adapter)
+        self.session.mount('https://', self._adapter)
+        self._adapter.defaultTimeout = defaultTimeout
+
         self._requestGroups = 0
         self._requestAdded = Event()
         self._requestQueue = _RequestQueue()
@@ -309,6 +331,14 @@ class Requests(object):
         self._killed = False
 
         Requests._runningRequests.add(Greenlet.spawn(self._run))
+
+    @property
+    def defaultTimeout(self):
+        return self._adapter.defaultTimeout
+
+    @defaultTimeout.setter
+    def defaultTimeout(self, value):
+        self._adapter.defaultTimeout = value
 
     def __del__(self):
         self._kill()

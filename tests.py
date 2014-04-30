@@ -11,7 +11,7 @@ Slow computers, or running the tests in the background may fail these tests.
 from gevent import sleep
 from random import random
 from re import compile
-from requests import Response, Session
+from requests import Response, Session, Timeout
 from time import time
 from types import MethodType
 from unittest import main, TestCase
@@ -548,6 +548,36 @@ class Test2RealRequests(TestCase):
         self.assertLess(time() - start, 30) # Non-async has a minimum bound of 32 seconds
         self.assertEqual([ '1xA', '1xB', '1xC', '2xA', '2xB', '2xC', '3xA', '3xB', '3xC', '4xA', '4xB', '4xC' ], responses)
 
+    def test_timeout(self):
+        self.requests.defaultTimeout = 3
+
+        start = time()
+        try:
+            response = self.key(self.requests.one(self.url(4, 'R')))
+            self.fail()
+        except Timeout as e:
+            self.assertLess(time() - start, 3.3)
+
+        self.requests.defaultTimeout = None
+
+    def test_timeout_retry(self):
+        oldValue = self.requests.retryStrategy
+        self.requests.retryStrategy = Backoff() # Retries a timed-out request after a 10 second wait
+        self.requests.defaultTimeout = 3
+
+        start = time()
+        try:
+            response = self.key(self.requests.one(self.url(4, 'S')))
+        finally:
+            self.assertLess(time() - start, 5)
+            self.requests.defaultTimeout = None
+            self.requests.retryStrategy = oldValue
+
+    def test_timeout_none(self):
+        start = time()
+        response = self.key(self.requests.one(self.url(4, 'Q')))
+        self.assertLess(time() - start, 5)
+        self.assertEqual(response, 'Q')
 
 class Test3InFlight(TestCase):
     def test_all_swarm_get_executed(self):

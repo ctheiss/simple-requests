@@ -1,31 +1,75 @@
 # -*- coding: utf-8 -*-
 
-from httplib import IncompleteRead
+"""This module exports one function: patch.  Each argument can be True to perform the patch, or False to "unpatch".
+
+allowIncompleteResponses
+------------------------
+Affects [httplib](https://docs.python.org/2/library/httplib.html).  Allows
+continued processing when the actual amount of data is different than the
+amount specified ahead of time by the server (using the content-length
+header).  What are the possible scenarios?
+- The server calculated the content-length incorrectly, and you actually got
+  all the data.  This patch will fix this scenario.  This happens surprisingly
+  often.
+- You didn't get the full payload.  In this case, you'll likely get a
+  `ContentDecodingError` if the response has been compressed, or truncated
+  content (which may be chopped in the middle of a multi-byte character,
+  resulting in a `UnicodeError`). If you're parsing structured data, like XML
+  or JSON, it will almost certainly be invalid. So, in many cases, you'll get
+  an error raised anyways.
+
+Note that this patch affects **all** python http connections, even those
+outside of simple-requests, requests, and urllib3.
+
+avoidTooManyConnections
+-----------------------
+Affects [urllib3](https://github.com/shazow/urllib3).  simple-requests
+ultimately uses the extremely clever urllib3 library to manage connection
+pooling.  This library implements a *leaky bucket* paradigm for handling
+pools.  What does this mean?  Some number of connections are kept open
+with each server to avoid the costly operation of opening a new one.
+Should the maximum number of connections be exceeded, for whatever reason,
+a new connection will be created.  This *bonus connection* will be discarded
+once it's job is done; it will not go back into the pool.  This is considered
+to be a good compromise between performance and number of open connections
+(which count as open files).
+
+There are some scenarios whereby the number of open connections keeps
+increasing faster than they can be closed, and eventually, you get
+`socket.error: [Errno 24] Too many open files`.  After this point, it's
+probably unrecoverable.
+
+How many open connections can you have before this is a problem?  On many
+systems, around 900.
+
+This patch will add a speed-limit to the creation of new `urllib3` connections.
+As long as there are fewer than 200 open connections, new ones will be
+created immediately.  After that point, new connections are opened at a rate
+of 1 every 10 seconds.  Once the number of open connections drops to below
+200, they are created immediately again.
+
+Why is a speed-limit used instead of just blocking new connections from
+being opened?  Because there are scenarios where this would cause a deadlock:
+
+    for r1 in requests.swarm(urls1):
+        for r2 in requests.swarm(urls2):
+            ...
+            for r200 in requests.swarm(urls200):
+                requests.one(url201)
+
+If the problem is that a server is responding incredibly slowly to a swarm of
+requests, and even the speed limit isn't helping, your best options are:
+ - Restructure your program to avoid nesting swarms/each.
+ - Drastically decrease `concurrent`, increase `minSecondsBetweenRequests`, or
+   add a `defaultTimeout` (all parameters to `Requests`).
+"""
+
+from compat import IncompleteRead
 
 from gevent import sleep, spawn
 from gevent.lock import BoundedSemaphore
 
 from requests.packages.urllib3.connection import HTTPConnection, HTTPSConnection
-
-# Allow (globally) up to 200 open connections before severely throttling.
-# There are some corner-cases whereby connections are not closed immediately,
-# or where there are legitimately more than 200 open connections.  For example:
-# requests.swarm(urls1):
-#     requests.swarm(urls2):
-#         ...
-#         requests.swarm(urls200):
-#             requests.one(url201)
-#
-# As a compromise between avoiding the "Too many open files" error and
-# deadlocking, we'll throttle connection creation after the first 200 open
-# connections instead of simply blocking forever.  Closing connections down to
-# below 200 will eliminate the throttling. After the first 200, connections
-# will open only after waiting 10 seconds.
-#
-# Note that this timeout applies in parallel, so practically it will mean that
-# max(requests.concurrent) is the upper bound of new connections every
-# 10 seconds.
-
 
 def patch(allowIncompleteResponses = False, avoidTooManyConnections = False):
     if allowIncompleteResponses:

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from . import HTTPError
+from compat import HTTPError
 
 class RetryStrategy(object):
     """The base implementation, which doesn't retry at all."""

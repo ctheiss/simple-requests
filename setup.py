@@ -35,21 +35,24 @@ Usage
 
 Release History
 ---------------
-1.1.0
+1.1.0 (Apr 30, 2014)
 ======================
 **API Changes**
 - Timeout parameter added to ``Requests.__init__``
 **Bug Fixes**
 - No more errors / warnings on exit
-- Eliminate "Too many open files" error when swarming *many* streaming requests
+- Fixes due to API changes in gevent 1.0
 - Fixed a couple documentation errors
+**Features**
+- Added a patch class, with monkey patches of urllib3 (to reduce the likelihood of too many
+  open connections at once) and httplib (to disregard servers that incorrectly report the content-length)
 """
 
 from setuptools import setup
 
 setup(
     name='simple-requests',
-    version='1.0.3',
+    version='1.1.0',
     url='https://github.com/ctheiss/simple-requests',
     license='MIT',
     author='Corey Theiss',

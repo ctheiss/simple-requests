@@ -57,32 +57,19 @@ API
 ---
 """
 
+__title__ = 'simple-requests'
+__version__ = '1.1.0'
+__build__ = 0x010100
+__author__ = 'Corey Theiss'
+__license__ = 'MIT License'
+__copyright__ = 'Copyright 2013 Corey Theiss'
+
 # This needs to be first
 import gevent.monkey; gevent.monkey.patch_all(thread=False, select=False)
 
-from urllib2 import HTTPError as libHTTPError
-
-class HTTPError(libHTTPError):
-    """Encapsulates HTTP errors (status codes in the 400s and 500s).
-
-    .. attribute:: code
-
-        Status code for this error.
-
-    .. attribute:: msg
-
-        The reason (associated with the status code).
-
-    .. attribute:: response
-
-        The instance of :class:`requests.Response` which triggered the error.
-    """
-    def __init__(self, response):
-        super(HTTPError, self).__init__(response.url, response.status_code, response.reason, response.headers, response.raw)
-        self.response = response
-
+from compat import HTTPError
 from simple_requests import Requests, ResponsePreprocessor
-from strategy import RetryStrategy, Strict, Lenient, Backoff
+from strategy import Strict, Lenient, Backoff
 from monkey import patch
 
-__all__ = ( 'Requests', 'ResponsePreprocessor', 'RetryStrategy', 'Strict', 'Lenient', 'Backoff', 'HTTPError', 'patch' )
+__all__ = ( 'Requests', 'ResponsePreprocessor', 'Strict', 'Lenient', 'Backoff', 'HTTPError', 'patch' )
