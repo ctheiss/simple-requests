@@ -51,6 +51,11 @@ Release History
 
 from setuptools import setup
 
+# python setup.py sdist register upload
+# Choice 1
+# Save login: yes
+# After upload, delete file ~/.pypirc
+
 setup(
     name='simple-requests',
     version='1.1.0',
@@ -58,13 +63,13 @@ setup(
     license='MIT',
     author='Corey Theiss',
     author_email='corey@exploringsolutions.com',
-    description='Asynchronous requests in Python without thinking about it',
+    description='Asynchronous requests in Python without thinking about it.',
     long_description=__doc__,
     install_requires=[
         'gevent >= 1.0',
         'requests >= 2.1.0'
     ],
-    py_modules=['simple_requests'],
+    packages=['simple_requests'],
     zip_safe=False,
     include_package_data=True,
     platforms='any',
