@@ -3,6 +3,8 @@
 Simple-requests allows you to get the performance benefit of asynchronous
 requests, without needing to use any asynchronous coding paradigms.
 
+"Asynchronous requests in Python without thinking about it."
+
 Usage
 -----
 
@@ -35,7 +37,7 @@ Usage
 
 Release History
 ---------------
-1.1.0 (Apr 30, 2014)
+1.1.0 (May 01, 2014)
 ======================
 **API Changes**
 - Timeout parameter added to ``Requests.__init__``
