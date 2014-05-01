@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 
-"""This module exports one function: patch.  Each argument can be True to perform the patch, or False to "unpatch".
+"""This module exports one function: patch.  Each argument can be True to
+perform the patch, or False to "unpatch".
+
+Due to the nature of the problems these patches are intended to fix,
+misbehaving servers, they are very difficult to test.  Please take this
+into consideration when using them in a production environment.
 
 allowIncompleteResponses
 ------------------------
@@ -21,7 +26,7 @@ header).  What are the possible scenarios?
 Note that this patch affects **all** python http connections, even those
 outside of simple-requests, requests, and urllib3.
 
-avoidTooManyConnections
+avoidTooManyOpenFiles
 -----------------------
 Affects [urllib3](https://github.com/shazow/urllib3).  simple-requests
 ultimately uses the extremely clever urllib3 library to manage connection
@@ -48,6 +53,11 @@ created immediately.  After that point, new connections are opened at a rate
 of 1 every 10 seconds.  Once the number of open connections drops to below
 200, they are created immediately again.
 
+In addition to the speed-limit, for every 200 connections opened after 200 are
+already open, the garbage collector is forcefully run.  Testing has shown that
+this can help close sockets lingering in a CLOSE_WAIT state (which counts as an
+open file).
+
 Why is a speed-limit used instead of just blocking new connections from
 being opened?  Because there are scenarios where this would cause a deadlock:
 
@@ -64,28 +74,30 @@ requests, and even the speed limit isn't helping, your best options are:
    add a `defaultTimeout` (all parameters to `Requests`).
 """
 
-from compat import IncompleteRead
+from gc import collect
+
+from compat import HTTPResponse, IncompleteRead
 
 from gevent import sleep, spawn
 from gevent.lock import BoundedSemaphore
 
 from requests.packages.urllib3.connection import HTTPConnection, HTTPSConnection
 
-def patch(allowIncompleteResponses = False, avoidTooManyConnections = False):
+def patch(allowIncompleteResponses = False, avoidTooManyOpenFiles = False):
     if allowIncompleteResponses:
         _patch_allowIncompleteResponses()
     else:
         _unpatch_allowIncompleteResponses()
     
-    if avoidTooManyConnections:
-        _patch_avoidTooManyConnections()
+    if avoidTooManyOpenFiles:
+        _patch_avoidTooManyOpenFiles()
     else:
-        _unpatch_avoidTooManyConnections()
+        _unpatch_avoidTooManyOpenFiles()
 
 
 _applied = {
     'allowIncompleteResponses': False,
-    'avoidTooManyConnections': False
+    'avoidTooManyOpenFiles': False
 }
 
 
@@ -102,6 +114,14 @@ class _LeakySemaphore(object):
         self._leaked += 1
         self._semaphore.release()
 
+    @property
+    def inUse(self):
+        return self._semaphore._initial_value - self.semaphore.counter
+
+    @property
+    def waiting(self):
+        return len(self._semaphore._links)
+
     def release(self):
         if self._stopped:
             return
@@ -117,7 +137,7 @@ class _LeakySemaphore(object):
             self._timer.kill(block = False)
             self._timer = None
 
-        while len(self._semaphore._links) > 0:
+        while self.waiting > 0:
             self._semaphore.release()
             sleep(0.1)
 
@@ -130,7 +150,7 @@ class _LeakySemaphore(object):
         if self._timer is not None:
             self._timer.kill(block = False)
             self._timer = None
-            if len(self._semaphore._links) > 0:
+            if self.waiting > 0:
                 self._timer = spawn(self._leak)
 
 
@@ -142,26 +162,31 @@ def _patch_allowIncompleteResponses():
                 return self._simple_old_read(amt)
             except IncompleteRead as e:
                 return e.partial
-        httplib.HTTPResponse._simple_old_read = httplib.HTTPResponse.read
-        httplib.HTTPResponse.read = _simple_new_read
+        HTTPResponse._simple_old_read = HTTPResponse.read
+        HTTPResponse.read = _simple_new_read
 
 def _unpatch_allowIncompleteResponses():
     if _applied['allowIncompleteResponses']:
         _applied['allowIncompleteResponses'] = False
-        httplib.HTTPResponse.read = httplib.HTTPResponse._simple_old_read
-        del httplib.HTTPResponse._simple_old_read
+        HTTPResponse.read = HTTPResponse._simple_old_read
+        del HTTPResponse._simple_old_read
 
 
-def _patch_avoidTooManyConnections(softMaxConnections = 200, maxSeconds = 10):
-    if not _applied['avoidTooManyConnections']:
-        _applied['avoidTooManyConnections'] = True
+def _patch_avoidTooManyOpenFiles(softMaxConnections = 200, maxSeconds = 10, forceGCInterval = 200):
+    if not _applied['avoidTooManyOpenFiles']:
+        _applied['avoidTooManyOpenFiles'] = True
         openConnections = _LeakySemaphore(softMaxConnections, maxSeconds)
-
+        openConnections.forceGCCounter = 0
 
         def _simple_new_connect(self):
             if not hasattr(self, '_simple_acquire'):
                 self._simple_acquire = True
                 openConnections.acquire()
+                if openConnections.waiting > 0:
+                    if openConnections.forceGCCounter > forceGCInterval:
+                        openConnections.forceGCCounter = 0
+                        collect()
+
             if hasattr(self, '_simple_old_connect'):
                 self._simple_old_connect()
             else:
@@ -193,9 +218,9 @@ def _patch_avoidTooManyConnections(softMaxConnections = 200, maxSeconds = 10):
             HTTPSConnection._simple_old_close = HTTPSConnection.close
             HTTPSConnection.close = _simple_new_close
 
-def _unpatch_avoidTooManyConnections():
-    if _applied['avoidTooManyConnections']:
-        _applied['avoidTooManyConnections'] = False
+def _unpatch_avoidTooManyOpenFiles():
+    if _applied['avoidTooManyOpenFiles']:
+        _applied['avoidTooManyOpenFiles'] = False
 
         openConnections.stop()
 

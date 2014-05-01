@@ -3,10 +3,10 @@
 import sys
 
 if sys.version_info[0] >= 3:
-    from http.client import IncompleteRead
+    from http.client import HTTPResponse, IncompleteRead
     from urllib.error import HTTPError as _HTTPError
 else:
-    from httplib import IncompleteRead
+    from httplib import HTTPResponse, IncompleteRead
     from urllib2 import HTTPError as _HTTPError
 
 class HTTPError(_HTTPError):

@@ -18,9 +18,18 @@ from unittest import main, TestCase
 
 from simple_requests import *
 
-class NoRaiseServerError(ResponsePreprocessor):
+patch(allowIncompleteResponses = True, avoidTooManyOpenFiles = True)
+
+class NoRaiseHTTPError(ResponsePreprocessor):
     def error(self, bundle):
         if isinstance(bundle.exception, HTTPError):
+            return bundle.ret()
+        else:
+            raise bundle.exception
+
+class NoRaiseTimeoutError(ResponsePreprocessor):
+    def error(self, bundle):
+        if isinstance(bundle.exception, Timeout):
             return bundle.ret()
         else:
             raise bundle.exception
@@ -29,7 +38,7 @@ class Test1Logic(TestCase):
     def setUp(self):
         self.default = Requests()
         self.highConcurrency = Requests(concurrent = 5)
-        self.noRaise = Requests(responsePreprocessor = NoRaiseServerError())
+        self.noRaise = Requests(responsePreprocessor = NoRaiseHTTPError())
         self.defaultSendTime = defaultSendTime = 0.4
         self.defaultRetryWait = 2
 
@@ -568,10 +577,28 @@ class Test2RealRequests(TestCase):
         start = time()
         try:
             response = self.key(self.requests.one(self.url(4, 'S')))
+            self.fail()
+        except Timeout:
+            self.assertLess(time() - start, 16.3)
         finally:
-            self.assertLess(time() - start, 5)
             self.requests.defaultTimeout = None
             self.requests.retryStrategy = oldValue
+
+    def test_timeout_retry_noerror(self):
+        oldValue = self.requests.retryStrategy, self.requests.responsePreprocessor
+        self.requests.retryStrategy = Backoff() # Retries a timed-out request after a 10 second wait
+        self.requests.responsePreprocessor = NoRaiseTimeoutError()
+        self.requests.defaultTimeout = 3
+
+        start = time()
+
+        response = self.requests.one(self.url(4, 'W'))
+
+        self.assertLess(time() - start, 16.3)
+        self.assertIsNone(response)
+
+        self.requests.defaultTimeout = None
+        self.requests.retryStrategy, self.requests.responsePreprocessor = oldValue
 
     def test_timeout_none(self):
         start = time()
