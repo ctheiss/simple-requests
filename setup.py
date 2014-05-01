@@ -3,10 +3,9 @@
 Simple-requests allows you to get the performance benefit of asynchronous
 requests, without needing to use any asynchronous coding paradigms.
 
-"Asynchronous requests in Python without thinking about it."
-
 Usage
 -----
+.. code-block:: python
 
     from simple_requests import Requests
 
@@ -40,14 +39,14 @@ Release History
 1.1.0 (May 01, 2014)
 ======================
 **API Changes**
-- Timeout parameter added to ``Requests.__init__``
+ * ``defaultTimeout`` parameter added to ``Requests.__init__``
 **Bug Fixes**
-- No more errors / warnings on exit
-- Fixes due to API changes in gevent 1.0
-- Fixed a couple documentation errors
+ * No more errors / warnings on exit
+ * Fixed due to API changes in gevent 1.0
+ * Fixed a couple documentation errors
 **Features**
-- Added a patch class, with monkey patches of urllib3 (to reduce the likelihood of too many
-  open connections at once) and httplib (to disregard servers that incorrectly report the content-length)
+ * Added a patch class, with monkey patches of urllib3 (to reduce the likelihood of too many
+   open connections/files at once) and httplib (to disregard servers that incorrectly report the content-length)
 """
 
 from setuptools import setup
