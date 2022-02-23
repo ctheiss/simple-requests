@@ -2,6 +2,8 @@
 
 Asynchronous requests in Python2 without thinking about it.
 
+*Note: This library has not been updated in some time.  While it still works swimmingly for Python2, you will need to find an alternative for Python3.*
+
 ## Usage
 
 ```python
