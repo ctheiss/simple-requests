@@ -1,6 +1,6 @@
 # simple-requests
 
-Asynchronous requests in Python without thinking about it.
+Asynchronous requests in Python2 without thinking about it.
 
 ## Usage
 
